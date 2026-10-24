@@ -37,7 +37,7 @@ Rehearse once with a timer, then record a continuous understandable demo. Keep a
 - [ ] Tests run on final commit; failed/skipped/unrun checks disclosed.
 - [ ] Actual Gemma call succeeded if entering that category; model attribution correct.
 - [ ] Actual DigitalOcean HTTPS deployment verified if claiming that category.
-- [ ] Public repository includes code, lock, setup, test instructions and attribution.
+- [x] Public repository includes code, lock, setup, test instructions and attribution: https://github.com/sg721642/hiperpulse
 - [ ] Team chooses appropriate license for its original code and retains dependency licenses.
 - [ ] No `.env`, API keys, passwords, private recordings or unrelated parent-project files.
 - [ ] PPT includes problem, solution, architecture, sponsors, actual results and limitations.

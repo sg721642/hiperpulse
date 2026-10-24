@@ -677,8 +677,10 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 ## Git Status
 
 - Git repository initialized (`main` branch).
-- Working tree: clean baseline staged for first commit.
-- Intended remote: pending confirmation of user's GitHub repository.
+- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
+- Local HEAD SHA: `620fe8f20b73f3683f6a98af8a96a324bf8b3514`
+- Remote main SHA: `620fe8f20b73f3683f6a98af8a96a324bf8b3514` (Verified match via `git ls-remote`).
+- Staged / Working Tree: Clean.
 
 ## Pending Work (Next Milestones)
 
@@ -924,7 +926,7 @@ Rehearse once with a timer, then record a continuous understandable demo. Keep a
 - [ ] Tests run on final commit; failed/skipped/unrun checks disclosed.
 - [ ] Actual Gemma call succeeded if entering that category; model attribution correct.
 - [ ] Actual DigitalOcean HTTPS deployment verified if claiming that category.
-- [ ] Public repository includes code, lock, setup, test instructions and attribution.
+- [x] Public repository includes code, lock, setup, test instructions and attribution: https://github.com/sg721642/hiperpulse
 - [ ] Team chooses appropriate license for its original code and retains dependency licenses.
 - [ ] No `.env`, API keys, passwords, private recordings or unrelated parent-project files.
 - [ ] PPT includes problem, solution, architecture, sponsors, actual results and limitations.

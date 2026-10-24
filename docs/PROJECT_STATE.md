@@ -26,8 +26,10 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 ## Git Status
 
 - Git repository initialized (`main` branch).
-- Working tree: clean baseline staged for first commit.
-- Intended remote: pending confirmation of user's GitHub repository.
+- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
+- Local HEAD SHA: `620fe8f20b73f3683f6a98af8a96a324bf8b3514`
+- Remote main SHA: `620fe8f20b73f3683f6a98af8a96a324bf8b3514` (Verified match via `git ls-remote`).
+- Staged / Working Tree: Clean.
 
 ## Pending Work (Next Milestones)
 
