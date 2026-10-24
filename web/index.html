@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HiperPulse | Evidence before estimates</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header><a class="brand" href="/">◉ HiperPulse</a><span class="badge">EXPERIMENTAL / v1.0</span></header>
+<main>
+<section class="intro"><p class="eyebrow">CAMERA SIGNAL LAB</p><h1>Evidence before<br><em>estimates.</em></h1><p>Explore a pulse-like signal. See what supports it, what disrupts it, and when an estimate should be withheld.</p><p class="warning">Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.</p></section>
+<div class="layout">
+<section class="panel"><h2>01 / Choose an input</h2><p>Start with a labelled synthetic signal, or capture 30 seconds in steady light.</p>
+<div class="buttons"><button id="clean">Clean synthetic sample</button><button id="artifact" class="secondary">Artifact sample</button><button id="flat" class="secondary">Flat sample</button></div>
+<div class="capture"><video id="video" muted playsinline></video><div class="guide" aria-hidden="true"><span class="roi left"></span><span class="roi right"></span></div></div>
+<p class="hint">For camera/video: place the two boxes on bare cheek skin, below the eyes. This fixed guide does not detect faces or track movement. Keep your face still; no filters, flashlight, or digital zoom.</p>
+<label class="consent"><input id="consent" type="checkbox"> I consent to sending derived color traces to this server for analysis. Video frames remain in my browser; the app does not persist traces.</label>
+<div class="buttons"><button id="camera" class="secondary">Open camera</button><button id="record" disabled>Capture 30 seconds</button><button id="stop" class="secondary" disabled>Stop / discard</button></div>
+<label class="file">Choose local video (10–60 s, up to 50 MB)<input id="file" type="file" accept="video/*"></label>
+<button id="processVideo" class="secondary" disabled>Process selected video</button>
+<label class="file">Or load a trace JSON (up to 2 MB)<input id="traceFile" type="file" accept=".json,application/json"></label>
+<p id="status" role="status" aria-live="polite">Ready. No camera is active.</p>
+</section>
+<section class="panel result"><h2>02 / Inspect the evidence</h2><p id="source" class="eyebrow">NO INPUT YET</p>
+<div class="metrics"><div><span id="bpm" class="number">—</span><span class="unit">experimental BPM</span></div><div><span id="quality" class="number small">—</span><span class="unit">checks passed</span></div></div>
+<p id="decision">Choose an input to begin.</p><p class="hint">The score is the fraction of heuristic checks passed, not confidence or accuracy. Shared lighting artifacts can pass every check.</p>
+<h3>Pulse-like waveform</h3><canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas><p class="axis">Time (seconds) · normalized amplitude (arbitrary units)</p>
+<h3>Periodicity spectrum</h3><canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas><p class="axis">Frequency equivalent (BPM) · relative spectral power</p>
+<details><summary>View quality checks and retake guidance</summary><div id="checks"></div></details>
+<div class="buttons"><button id="receipt" class="secondary" disabled>Download evidence receipt</button><button id="trace" class="secondary" disabled>Download input trace</button></div>
+<h3>Artifact comparison lab</h3><p class="hint">Compare this trace with a copy whose second patch contains an added periodic artifact. A deliberate software stress test, not a clinical experiment.</p>
+<button id="stress" class="secondary" disabled>Compare with injected artifact</button><p id="comparison"></p>
+<h3>03 / Explain the session</h3><label class="consent"><input id="aiConsent" type="checkbox"> Send the calculated summary to Google's Gemini API for a Gemma 4 explanation.</label>
+<label>Demo password <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner"></label>
+<button id="explain" disabled>Explain with Gemma 4</button><p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>
+<button id="clear" class="secondary">Clear session</button>
+</section></div>
+<footer>GREEN baseline · transparent quality checks · Gemma 4 explanations · DigitalOcean-ready<br>Lighting, movement, skin reflectance, exposure and camera processing affect results. A plausible number is not evidence of clinical accuracy.</footer>
+</main></body></html>
