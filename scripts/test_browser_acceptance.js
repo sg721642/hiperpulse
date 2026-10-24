@@ -172,7 +172,7 @@ async function main() {
     '--no-first-run',
     '--no-default-browser-check',
     `http://127.0.0.1:${PORT}/`
-  ], { stdio: 'inherit' });
+  ], { stdio: 'ignore' });
 
   let client = null;
   const testResults = new Map();
@@ -648,9 +648,14 @@ async function main() {
     }
 
   } finally {
-    if (client) await client.close();
-    browserProc.kill();
-    fs.rmSync(USER_DATA_DIR, { recursive: true, force: true });
+    if (client) {
+      try { await client.close(); } catch {}
+    }
+    try { browserProc.kill(); } catch {}
+    try {
+      await sleep(300);
+      fs.rmSync(USER_DATA_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {}
   }
 
   // Summary

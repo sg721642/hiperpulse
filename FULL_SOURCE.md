@@ -54,10 +54,10 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install system dependencies (FFmpeg)
         run: |
@@ -109,10 +109,10 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install system dependencies (FFmpeg)
         run: |
@@ -140,7 +140,7 @@ jobs:
 
       - name: Run browser acceptance suite (offline mode)
         run: |
-          SKIP_LIVE_AI=1 PORT=8080 node scripts/test_browser_acceptance.js
+          SKIP_LIVE_AI=1 PORT=8080 node --experimental-websocket scripts/test_browser_acceptance.js
 
   docker-smoke:
     name: Docker Build & Container Smoke Test
@@ -1146,7 +1146,7 @@ async function main() {
     '--no-first-run',
     '--no-default-browser-check',
     `http://127.0.0.1:${PORT}/`
-  ], { stdio: 'inherit' });
+  ], { stdio: 'ignore' });
 
   let client = null;
   const testResults = new Map();
@@ -1622,9 +1622,14 @@ async function main() {
     }
 
   } finally {
-    if (client) await client.close();
-    browserProc.kill();
-    fs.rmSync(USER_DATA_DIR, { recursive: true, force: true });
+    if (client) {
+      try { await client.close(); } catch {}
+    }
+    try { browserProc.kill(); } catch {}
+    try {
+      await sleep(300);
+      fs.rmSync(USER_DATA_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {}
   }
 
   // Summary
