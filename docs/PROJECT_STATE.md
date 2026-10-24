@@ -1,6 +1,6 @@
 # Project state — read this at the start of every chat
 
-Last updated: 25 October 2026. Package version: 1.0. Algorithm: `green-evidence-1.0`.
+Last updated: 25 October 2026. Package version: 1.1. Algorithm: `green-evidence-1.1`.
 
 ## Current Workspace & Verification Status
 
@@ -45,31 +45,42 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     5. `test_receipt_immutability_during_artifact_comparison`: Confirms original receipt and SHA-256 remain unmutated by client stress tests.
   - Full Python suite: **46 / 46 passing in 4.01s** (`.venv/bin/python -m pytest`).
   - Browser Acceptance Suite: **17 / 17 checks passing** in headless Brave via CDP (`scripts/test_browser_acceptance.js`).
-  - Demo password updated to `hiperpulse` in `.env` and server daemon restarted (`task-854`).
+  - Demo password rotated to secure randomly generated secret in `.env` and server daemon restarted (`task-1010`).
   - Local Docker readiness audit completed: `docker` CLI not installed on host machine; Dockerfile multi-stage non-root container and `.dockerignore` context statically verified.
   - DigitalOcean App Platform spec created (`deploy/digitalocean/app.yaml`) and deployment guide documented (`docs/DEPLOYMENT_DIGITALOCEAN.md`).
   - Release gates established:
-    1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — Owner explicitly requested frontend/UI revisions before cloud deployment.
-    2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION` — No cloud resources will be provisioned until UI is customized and approved.
-    3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — Development Gemini API key is marked exposed and must be rotated prior to public release.
+- **Independent Audit Remediation & Evidence Features (F01–F11):** VERIFIED.
+  - **F01 (Credential Hygiene):** Rotated `DEMO_TOKEN` to a cryptographically strong 48-char random hex token in local `.env`; sanitized all documentation.
+  - **F02 (Dependencies):** Aligned `requirements.txt` to `scipy==1.18.1` and added `imageio-ffmpeg==0.6.0`; configured dynamic browser runner parameters.
+  - **F03 (Browser Test False-Pass):** Pre-registered 17 tests with strict PASS/FAIL/SKIP/BLOCKED statuses; added negative timeout regression verification.
+  - **F05 (Both-Patch Exposure):** Upgraded algorithm version to `green-evidence-1.1`; both patches independently enforced in biological range `[20, 235]`.
+  - **F06 (Signal Identity):** Introduced canonical `signal_sha256` computed over raw numeric signal data; added `ingestion` metadata field; verified browser trace reimport round trip.
+  - **F07 & F09 (Deadline & Abuse Limits):** Bounded server generation budget to 60.0s (below client 95s timeout); early demo token authentication; concurrency limited to `asyncio.Semaphore(2)`.
+  - **F08 (Assertions & Invariants):** True PTS extraction required; boundary tests for exact 7199, 7200, and 7201 frames; verified corruption of each gate individually withholds BPM.
+  - **F10 (CI & License):** Created `.github/workflows/ci.yml` and MIT `LICENSE` preserving third-party attribution.
+  - **F11 (Evidence Ledger):** Established `docs/EVIDENCE_LEDGER.md` with complete audit and verification tracking.
+  - **Differentiator 1 (Guided Retake):** Rule-based actionable advice by failure category; transient in-memory session comparison with score and gate deltas.
+  - **Differentiator 2 (Artifact Challenge Lab):** Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination demonstrating optical rPPG limits).
+  - **Differentiator 3 (Judge Evidence Card):** Verifiable download of `hiperpulse-judge-evidence.json` with commit SHA, canonical signal hash, checklist, and disclaimers.
+  - **Automated Test Status:** **59 / 59 Python tests passing** in 5.22s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
 
 ## Scope and implementation
 
-Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate; waveform/spectrum; artifact comparison; downloadable receipts/traces; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
+Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
 
 ## Git Status
 
-- Git repository initialized (`main` branch).
-- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository synchronized).
-- Local branch: `main`
-- Milestone M5 changes staged/committed: `tests/test_m5_robustness.py`, `deploy/digitalocean/app.yaml`, `docs/DEPLOYMENT_DIGITALOCEAN.md`, `AGENTS.md`, `docs/VALIDATION.md`, `docs/DECISIONS.md`, `docs/PROJECT_STATE.md`.
+- Git repository: `https://github.com/sg721642/hiperpulse.git`.
+- Working branch: `remediation/audit-hardening`.
+- Base commit: `06ec6c7cdefa54520fe020f7f0e8faeffe725432`.
+- Audit remediation & hardening changes staged/committed across Python signal engine, API models, web frontend, CI workflows, and documentation.
 
 ## Mandatory Release Gates
 
-1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION`
+1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — The owner explicitly requires frontend/UI modifications before deploying to DigitalOcean. Do not deploy, create cloud resources, or enable billing until the owner provides UI requirements and approves the revised UI.
 2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
-3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT`
+3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key is marked for local use only and must be revoked and rotated before any public production deployment.
 
 ## Immediate Next Smallest Task
 
-Hard stop at Frontend UI Customization Checkpoint. Present the Milestone M5 verification report to the project owner and request their UI design requirements, screenshots, mockups, or styling preferences before proceeding to deployment.
+Hard stop at Frontend Visual Customization Checkpoint. Present the final audit remediation and evidence features report to the project owner and request their visual styling requirements and design preferences before proceeding to deployment.

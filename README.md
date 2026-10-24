@@ -8,6 +8,12 @@
 
 Camera recording / local video / synthetic sample / JSON trace → timestamped two-patch RGB signals → GREEN signal-processing baseline → pulse-like waveform and spectrum → transparent quality checks → estimated BPM only when all required gates pass → evidence receipt → Gemma 4 explanation of calculated results.
 
+## Prerequisites
+
+- **Python:** 3.12+ (tested on Python 3.12.15)
+- **Node.js:** v20+ LTS (for JavaScript syntax check and automated browser acceptance runner)
+- **Chromium-based Browser:** Brave, Google Chrome, or Chromium (configurable via `BROWSER_BIN`)
+
 ## Quick Start (macOS / Linux)
 
 ```bash
@@ -15,20 +21,31 @@ Camera recording / local video / synthetic sample / JSON trace → timestamped t
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# 2. Install locked dependencies
+# 2. Install locked dependencies (includes scipy 1.18.1 and imageio-ffmpeg for cross-platform FFmpeg)
 pip install -r requirements-lock.txt
 
-# 3. Run automated tests (34 tests)
+# 3. Run automated tests
 python -m pytest
 
 # 4. Generate deterministic synthetic fixture files
 python scripts/export_samples.py
+python scripts/export_video_fixtures.py
 
 # 5. Launch the application
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-Open `http://localhost:8080` in Chrome or Edge.
+Open `http://localhost:8080` in Chrome, Edge, or Brave.
+
+### Automated Browser Acceptance Runner
+
+```bash
+# Run headless acceptance tests against local instance
+node scripts/test_browser_acceptance.js
+
+# Custom browser binary and port can be specified:
+# BROWSER_BIN="/path/to/chrome" PORT=8080 node scripts/test_browser_acceptance.js
+```
 
 ## Quick Start (Windows PowerShell)
 

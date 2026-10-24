@@ -23,9 +23,10 @@
 <h3>Pulse-like waveform</h3><canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas><p class="axis">Time (seconds) · normalized amplitude (arbitrary units)</p>
 <h3>Periodicity spectrum</h3><canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas><p class="axis">Frequency equivalent (BPM) · relative spectral power</p>
 <details><summary>View quality checks and retake guidance</summary><div id="checks"></div></details>
-<div class="buttons"><button id="receipt" class="secondary" disabled>Download evidence receipt</button><button id="trace" class="secondary" disabled>Download input trace</button></div>
-<h3>Artifact comparison lab</h3><p class="hint">Compare this trace with a copy whose second patch contains an added periodic artifact. A deliberate software stress test, not a clinical experiment.</p>
-<button id="stress" class="secondary" disabled>Compare with injected artifact</button><p id="comparison"></p>
+<div id="retakeSection" class="retake-section"><h3>Guided retake analysis</h3><p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p><p id="retakeComparison" class="hint" style="white-space:pre-wrap;"></p><button id="retakeAction" class="secondary" disabled>Retake / capture again</button></div>
+<div class="buttons"><button id="receipt" class="secondary" disabled>Download evidence receipt</button><button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button><button id="trace" class="secondary" disabled>Download input trace</button></div>
+<h3>Artifact challenge lab</h3><p class="hint">Compare this trace with controlled algorithmic stress tests on an in-memory copy. Tests continuity, bilateral agreement, and shared ambient lighting artifacts.</p>
+<div class="buttons"><button id="challengeA" class="secondary" disabled>Challenge A: Timing dropout</button><button id="challengeB" class="secondary" disabled>Challenge B: Conflicting patch</button><button id="challengeC" class="secondary" disabled>Challenge C: Shared periodic light</button><button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button></div><p id="comparison"></p>
 <h3>03 / Explain the session</h3><label class="consent"><input id="aiConsent" type="checkbox"> Send the calculated summary to Google's Gemini API for a Gemma 4 explanation.</label>
 <label>Demo password <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner"></label>
 <button id="explain" disabled>Explain with Gemma 4</button><p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>

@@ -4,7 +4,7 @@ import json
 import numpy as np
 from scipy import signal as sp
 
-VERSION = 'green-evidence-1.0'
+VERSION = 'green-evidence-1.1'
 LIMITATION = ('Experimental pulse-like periodicity only. Not clinically validated. '
               'Lighting or motion can imitate a pulse even when checks pass. '
               'No diagnosis, blood pressure, or oxygen saturation.')
@@ -84,16 +84,25 @@ def analyze(data):
     jitter = float(np.std(dt) / np.mean(dt))
     jump = float(max(np.quantile(np.abs(np.diff(a[:,1])), .95) /
                      max(np.mean(a[:,1]), 1) for a in (left,right)))
-    mean_light = float(min(left[:,1].mean(), right[:,1].mean()))
-    def check(name, value, passed, rule, action):
-        return {'name':name, 'value':round(float(value),4), 'pass':bool(passed),
-                'rule':rule, 'action':action}
+    patch1_mean = float(left[:,1].mean())
+    patch2_mean = float(right[:,1].mean())
+    min_light = min(patch1_mean, patch2_mean)
+    max_light = max(patch1_mean, patch2_mean)
+    exposure_passed = bool(20.0 <= min_light and max_light <= 235.0)
+    reported_light = max_light if max_light > 235.0 else min_light
+    def check(name, value, passed, rule, action, **extra):
+        c = {'name':name, 'value':round(float(value),4), 'pass':bool(passed),
+             'rule':rule, 'action':action}
+        c.update(extra)
+        return c
     checks = [
         check('duration_seconds', duration, duration >= 20, '>= 20 s', 'Record for 30 seconds.'),
         check('sample_rate_hz', fs, fs >= 15, '>= 15 Hz', 'Use a faster device; close other apps.'),
         check('largest_gap_seconds', dt.max(), dt.max() <= .2, '<= 0.2 s', 'Keep the tab visible and retry.'),
         check('timing_variation', jitter, jitter <= .35, '<= 0.35', 'Keep the tab visible and retry.'),
-        check('mean_green', mean_light, 20 <= mean_light <= 235, '20..235 /255', 'Use even, indirect lighting.'),
+        check('mean_green', reported_light, exposure_passed, 'both 20..235 /255',
+              'Use even, indirect lighting; ensure neither patch is dark (<20) or washed out (>235).',
+              patch1_mean=round(patch1_mean, 4), patch2_mean=round(patch2_mean, 4)),
         check('clipped_pixel_fraction', clipping.mean(), clipping.mean() <= .05, '<= 0.05', 'Reduce glare or deep shadows.'),
         check('color_jump_proxy', jump, jump <= .025, '<= 0.025', 'Hold still and keep lighting steady.'),
         check('relative_signal_std', amplitude, amplitude >= .0002, '>= 0.0002', 'Re-align both patches onto bare cheeks.'),
@@ -108,10 +117,22 @@ def analyze(data):
     score = round(100*sum(c['pass'] for c in checks)/len(checks))
     digest = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',',':'),
                                       allow_nan=False).encode()).hexdigest()
+    canonical_signal = {
+        'timestamps': [round(float(t), 5) for t in data['timestamps']],
+        'left': [[round(float(v), 5) for v in row] for row in data['left']],
+        'right': [[round(float(v), 5) for v in row] for row in data['right']],
+        'clipping': [round(float(c), 5) for c in data['clipping']]
+    }
+    signal_digest = hashlib.sha256(json.dumps(canonical_signal, sort_keys=True,
+                                             separators=(',',':'), allow_nan=False).encode()).hexdigest()
     stride = max(1, int(np.ceil(len(grid)/600)))
     display = wave / max(float(np.std(wave)), 1e-12)
     return {'schema_version':1, 'algorithm':VERSION, 'source':data['source'],
-            'input_sha256':digest, 'status':'accepted_experimental' if accepted else 'insufficient_quality',
+            'ingestion':data.get('ingestion', 'direct'),
+            'input_sha256':digest, 'signal_sha256':signal_digest,
+            'exposure_metrics':{'patch1_mean':round(patch1_mean, 4), 'patch2_mean':round(patch2_mean, 4),
+                                'min_mean':round(min_light, 4), 'max_mean':round(max_light, 4)},
+            'status':'accepted_experimental' if accepted else 'insufficient_quality',
             'bpm':round(candidate) if accepted else None, 'quality_score':score,
             'quality_label':'Checks passed' if accepted else 'Retake / inspect sample',
             'score_meaning':'Percent of heuristic checks passed; not a probability of accuracy.',

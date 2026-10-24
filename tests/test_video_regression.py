@@ -46,7 +46,7 @@ def decode_video_to_trace(video_path: Path, source: str = 'synthetic') -> dict:
     p_info = subprocess.run(cmd_info, capture_output=True, text=True)
     pts = [float(l.split('pts_time:')[1].split()[0]) for l in p_info.stderr.splitlines() if 'pts_time:' in l]
     if len(pts) != num_frames:
-        pts = (np.arange(num_frames) / 30.0).tolist()
+        raise ValueError(f"Timestamp extraction mismatch: extracted {len(pts)} timestamps for {num_frames} frames from {video_path}")
 
     return {
         'source': source,

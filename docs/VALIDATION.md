@@ -7,15 +7,21 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **46 passed in 4.01s**, 0 failures, 0 errors.
+- **Result:** **59 passed in 5.22s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
   - 7 video regression tests (`tests/test_video_regression.py`)
-  - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`):
-    - All 14 quality gates verified present and failure of any single gate enforces `bpm: null`
-    - Waveform and spectrum generation preserved for inspectable failed signals
-    - Pydantic trace boundary enforcement (150-7200 frames, extra fields forbidden, invalid source rejected)
-    - Gemma prompt sanitization verified (zero raw biometric/timestamp/waveform data sent to Gemini API)
-    - Receipt immutability verified during client artifact stress comparison
+  - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`)
+  - 13 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
+    - Algorithm version bumped to `green-evidence-1.1`
+    - Both-patch independent exposure checks `[20, 235]` (6 isolated boundary cases)
+    - Canonical `signal_sha256` identity hash and Pydantic `ingestion` tagging
+    - Gemma 60s server deadline budget and structured timeout fallback
+    - Strict authentic PTS error enforcement
+    - Exact 7199, 7200, 7201 frame boundary tests
+    - Individual corruption tests for all 14 quality gates
+    - Early authentication and provider concurrency semaphore limit
+    - Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination)
+    - Judge Evidence Card schema integrity and disclaimers
 
 - **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 

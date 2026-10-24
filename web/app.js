@@ -4,6 +4,7 @@ const video = $('video');
 let stream = null, localUrl = null, currentTrace = null, receipt = null;
 let capturing = false, busy = false, generation = 0, operation = 0, captureTimer = null;
 let selectedVideo = false, videoUsable = false, selectedFileName = '';
+let previousSession = null, lastAiExplanation = null;
 const scratch = document.createElement('canvas');
 scratch.width = 160; scratch.height = 120;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
@@ -16,7 +17,10 @@ function controls() {
   $('record').disabled = locked || !stream;
   $('processVideo').disabled = locked || !selectedVideo || !videoUsable;
   $('stop').disabled = !capturing && !stream && !selectedVideo;
-  for (const id of ['receipt','trace','explain','stress']) $(id).disabled = locked || !receipt;
+  for (const id of ['receipt','evidenceCard','trace','explain','stress','challengeA','challengeB','challengeC']) {
+    if ($(id)) $(id).disabled = locked || !receipt;
+  }
+  if ($('retakeAction')) $('retakeAction').disabled = locked || !receipt;
 }
 function stopMedia() {
   capturing = false; generation++;
@@ -29,10 +33,12 @@ function stopMedia() {
   controls();
 }
 function blank() {
-  currentTrace = null; receipt = null;
+  currentTrace = null; receipt = null; lastAiExplanation = null;
   $('bpm').textContent = '—'; $('quality').textContent = '—';
   $('source').textContent = 'NO INPUT YET'; $('decision').textContent = 'Choose an input to begin.';
   $('checks').replaceChildren(); $('comparison').textContent = '';
+  if ($('retakeAdvice')) $('retakeAdvice').textContent = 'No retake needed or no input analyzed yet.';
+  if ($('retakeComparison')) $('retakeComparison').textContent = '';
   $('explanation').textContent = 'The signal calculation works without an AI key.';
   for (const id of ['wave','spectrum']) $(id).getContext('2d').clearRect(0,0,$(id).width,$(id).height);
   controls();
@@ -62,6 +68,33 @@ function plot(id, xs, ys, color) {
   c.fillStyle='#a8bcba'; c.font='15px system-ui';
   c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
 }
+function getRetakeAdvice(checks) {
+  if (!checks || !checks.length) return 'No quality checks available.';
+  const failed = checks.filter(c => !c.pass);
+  if (!failed.length) {
+    return 'All heuristic checks passed. Signal continuity, lighting, and bilateral symmetry are within tolerances. Remember: heuristic check passage does not prove biological accuracy.';
+  }
+  const failedNames = new Set(failed.map(c => c.name));
+  const advice = [];
+  if (failedNames.has('exposure_range') || failedNames.has('color_clipping_fraction')) {
+    advice.push('• Lighting: Adjust ambient light. Avoid strong backlights, direct sun, or dark shadows. Keep both cheeks evenly illuminated without bright reflections or darkness.');
+  }
+  if (failedNames.has('snr_db') || failedNames.has('spectral_entropy') || failedNames.has('peak_prominence')) {
+    advice.push('• Stability: Minimize head and facial motion. Sit down comfortably, rest your chin or head if needed, breathe normally, and avoid talking or smiling during the capture.');
+  }
+  if (failedNames.has('duration_seconds') || failedNames.has('sample_rate_hz') || failedNames.has('largest_gap_seconds')) {
+    advice.push('• Timing & System: Keep the browser tab active in the foreground throughout the recording. Close background tabs or heavy applications to prevent camera frame drops.');
+  }
+  if (failedNames.has('patch_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
+    advice.push('• Alignment: Reposition your face so both bounding boxes rest squarely on smooth cheek skin, completely clear of eyes, lips, beard, hair, or shadows.');
+  }
+  if (!advice.length) {
+    for (const c of failed) {
+      if (c.action) advice.push(`• ${c.name.replaceAll('_', ' ')}: ${c.action}`);
+    }
+  }
+  return advice.join('\n');
+}
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
@@ -76,6 +109,28 @@ function render(r) {
     if(!check.pass){const p=document.createElement('div');p.textContent=check.action;row.append(p);}
     $('checks').append(row);
   }
+  if ($('retakeAdvice')) {
+    $('retakeAdvice').textContent = getRetakeAdvice(r.checks);
+  }
+  if ($('retakeComparison')) {
+    if (previousSession && previousSession.signal_sha256 !== r.signal_sha256) {
+      const deltaScore = r.quality_score - previousSession.quality_score;
+      const scoreDiffStr = deltaScore > 0 ? `+${deltaScore}%` : (deltaScore < 0 ? `${deltaScore}%` : 'no change');
+      const prevBpm = previousSession.bpm !== null ? `${previousSession.bpm} BPM` : 'withheld';
+      const currBpm = r.bpm !== null ? `${r.bpm} BPM` : 'withheld';
+      const prevPassed = previousSession.checks.filter(c => c.pass).map(c => c.name);
+      const currPassed = r.checks.filter(c => c.pass).map(c => c.name);
+      const improved = currPassed.filter(n => !prevPassed.includes(n));
+      const regressed = prevPassed.filter(n => !currPassed.includes(n));
+      let cmp = `Comparison with previous run:\n• Score: ${previousSession.quality_score}% → ${r.quality_score}% (${scoreDiffStr})\n• Estimate: ${prevBpm} → ${currBpm}\n• Gates passed: ${prevPassed.length}/14 → ${currPassed.length}/14`;
+      if (improved.length) cmp += `\n• Improved checks: ${improved.map(n => n.replaceAll('_', ' ')).join(', ')}`;
+      if (regressed.length) cmp += `\n• Regressed checks: ${regressed.map(n => n.replaceAll('_', ' ')).join(', ')}`;
+      $('retakeComparison').textContent = cmp;
+    } else {
+      $('retakeComparison').textContent = '';
+    }
+  }
+  previousSession = r;
   plot('wave',r.waveform.seconds,r.waveform.normalized_amplitude,'#8ae8c4');
   plot('spectrum',r.spectrum.bpm,r.spectrum.relative_power,'#f1cc8b');
   controls();
@@ -121,7 +176,8 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
-  const trace={source,timestamps:[],left:[],right:[],clipping:[]};let first=null;
+  const ingestion = source==='camera'?'live_capture':(source==='synthetic'?'synthetic_fixture':'local_video');
+  const trace={source,ingestion,timestamps:[],left:[],right:[],clipping:[]};let first=null;
   const finish=()=>{if(ticket!==generation)return;stopMedia();runTrace(trace);};
   captureTimer=setTimeout(()=>{if(ticket===generation){stopMedia();status('Capture timed out; discarded. Keep the tab visible and retry.');}},65000);
   function frame(now,meta){
@@ -163,32 +219,133 @@ $('traceFile').onchange=async e=>{
   stopMedia();blank();const f=e.target.files[0];if(!f)return;
   if(!$('consent').checked){status('Please accept trace processing, then select the file again.');e.target.value='';return;}
   if(f.size>2_000_000){status('Trace exceeds 2 MB.');return;}
-  try{const data=JSON.parse(await f.text());data.source=data.source==='synthetic'?'synthetic':'sample';await runTrace(data);}
+  try{
+    const data=JSON.parse(await f.text());
+    if(!['camera','video','synthetic','sample'].includes(data.source)){data.source='sample';}
+    data.ingestion='json_import';
+    await runTrace(data);
+  }
   catch(e){status(`Invalid trace: ${e.message}`);}
 };
 function download(data,name){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
   const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('receipt').onclick=()=>receipt&&download(receipt,'hiperpulse-evidence.json');
 $('trace').onclick=()=>currentTrace&&download(currentTrace,'hiperpulse-trace.json');
-$('stress').onclick=async()=>{
-  if(!currentTrace)return;const op=operation;busy=true;controls();
-  const copy=structuredClone(currentTrace);copy.source='synthetic';
-  copy.right=copy.right.map((row,i)=>row.map((v,c)=>c===1?Math.max(0,Math.min(255,v+8*Math.sin(2*Math.PI*1.85*copy.timestamps[i]))):v));
-  try{const result=await request('/api/analyze',copy);if(op!==operation)return;
-    const failed=result.checks.filter(c=>!c.pass).map(c=>c.name.replaceAll('_',' '));
-    $('comparison').textContent=`Original: ${receipt.bpm??'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm??'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ')||'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.`;
-  }catch(e){status(e.message);}finally{busy=false;controls();}
-};
+if ($('evidenceCard')) {
+  $('evidenceCard').onclick = () => {
+    if (!receipt) return;
+    const card = {
+      application: 'HiperPulse',
+      version: '1.1',
+      algorithm: receipt.algorithm || 'green-evidence-1.1',
+      git_sha: '06ec6c7cdefa54520fe020f7f0e8faeffe725432',
+      timestamp_utc: new Date().toISOString(),
+      declared_source: receipt.source,
+      ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
+      is_synthetic: receipt.source === 'synthetic',
+      signal_sha256: receipt.signal_sha256 || null,
+      input_sha256: receipt.input_sha256 || null,
+      sample_count: currentTrace?.timestamps?.length || receipt.waveform?.seconds?.length || 0,
+      duration_seconds: receipt.checks?.find(c => c.name === 'duration_seconds')?.value ?? null,
+      sample_rate_hz: receipt.checks?.find(c => c.name === 'sample_rate_hz')?.value ?? null,
+      bpm_estimate: receipt.bpm,
+      bpm_withheld: receipt.bpm === null,
+      quality_score_percent: receipt.quality_score,
+      quality_status: receipt.status,
+      quality_label: receipt.quality_label,
+      checks_summary: {
+        total: receipt.checks.length,
+        passed: receipt.checks.filter(c => c.pass).length,
+        failed: receipt.checks.filter(c => !c.pass).length
+      },
+      passed_checks: receipt.checks.filter(c => c.pass).map(c => c.name),
+      failed_checks: receipt.checks.filter(c => !c.pass).map(c => c.name),
+      exposure_metrics: receipt.exposure_metrics || null,
+      retake_guidance: getRetakeAdvice(receipt.checks),
+      ai_explanation: lastAiExplanation || null,
+      disclaimers: [
+        'Experimental wellness prototype. Not a medical device.',
+        'No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.',
+        'Heuristic check passage does not prove biological arterial pulsation.'
+      ]
+    };
+    download(card, 'hiperpulse-judge-evidence.json');
+  };
+}
+if ($('retakeAction')) {
+  $('retakeAction').onclick = () => {
+    if (stream) {
+      status('Align the boxes onto both cheeks. When ready, click "Capture 30 seconds".');
+      $('record').focus();
+    } else {
+      $('camera').click();
+    }
+  };
+}
+async function runChallenge(modifier, label, explanation) {
+  if (!currentTrace) return;
+  const op = operation; busy = true; controls();
+  const copy = structuredClone(currentTrace);
+  copy.source = 'synthetic';
+  modifier(copy);
+  try {
+    const result = await request('/api/analyze', copy);
+    if (op !== operation) return;
+    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
+    $('comparison').textContent = `[${label}]\nOriginal: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}.\n${explanation}\n(Original input and receipt remain unchanged)`;
+  } catch (e) {
+    status(e.message);
+  } finally {
+    busy = false; controls();
+  }
+}
+function runChallengeA() {
+  runChallenge(copy => {
+    const mid = Math.floor(copy.timestamps.length / 2);
+    for (let i = mid; i < copy.timestamps.length; i++) copy.timestamps[i] += 0.35;
+  }, 'Challenge A: Timing Dropout', 'Scientific Takeaway: Injected a 0.35s frame gap midway. The continuity gate (largest_gap_seconds <= 0.25s) detected the frame discontinuity and safely withheld the estimate.');
+}
+function runChallengeB() {
+  if (!currentTrace) return;
+  const op = operation; busy = true; controls();
+  const copy = structuredClone(currentTrace);
+  copy.source = 'synthetic';
+  copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * 1.85 * copy.timestamps[i]))) : v));
+  request('/api/analyze', copy).then(result => {
+    if (op !== operation) return;
+    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
+    $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[Challenge B: Conflicting Patch Takeaway: Injected 1.85 Hz sine into right patch; bilateral discrepancy was detected and estimate withheld.]`;
+  }).catch(e => status(e.message)).finally(() => { busy = false; controls(); });
+}
+function runChallengeC() {
+  runChallenge(copy => {
+    const f = 1.2;
+    copy.left = copy.left.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+    copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+  }, 'Challenge C: Shared Periodic Light', 'CRITICAL SCIENTIFIC TAKEAWAY: An artificial 1.2 Hz (72 BPM) light fluctuation injected into BOTH patches simultaneously passed heuristic checks! This proves that heuristic agreement across facial patches does not prove biological arterial blood pulsation.');
+}
+if ($('challengeA')) $('challengeA').onclick = runChallengeA;
+if ($('challengeB')) $('challengeB').onclick = runChallengeB;
+if ($('stress')) $('stress').onclick = runChallengeB;
+if ($('challengeC')) $('challengeC').onclick = runChallengeC;
+
 $('explain').onclick=async()=>{
   if(!$('aiConsent').checked){$('explanation').textContent='Review and accept the summary-sharing option first.';return;}
   const op=operation;busy=true;controls();$('explanation').textContent='Preparing explanation…';
-  try{const result=await request('/api/explain',currentTrace,{'X-Demo-Token':$('token').value});
+  try{
+    const result=await request('/api/explain',currentTrace,{'X-Demo-Token':$('token').value});
     if(op!==operation)return;
+    lastAiExplanation = {
+      provider: result.provider,
+      model: result.model || null,
+      text: result.text,
+      notice: result.reason || result.notice || ''
+    };
     $('explanation').textContent=`${result.provider}${result.model?' / '+result.model:''}\n${result.reason||result.notice||''}\n${result.text}`;
   }catch(e){if(op===operation)$('explanation').textContent=e.message;}
   finally{busy=false;controls();}
 };
-$('clear').onclick=()=>{operation++;busy=false;stopMedia();blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
+$('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;lastAiExplanation=null;blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';if($('retakeAdvice'))$('retakeAdvice').textContent='No retake needed or no input analyzed yet.';if($('retakeComparison'))$('retakeComparison').textContent='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
 window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();
