@@ -21,3 +21,8 @@ Work in this folder. Do not modify the unrelated parent Few-shot Learning projec
 At each session end update `docs/PROJECT_STATE.md`: changed files, exact tests/results, unresolved problems, next smallest task, uncommitted changes. Record important architectural changes in `docs/DECISIONS.md`. One writer at a time in a shared working tree; independent chats must use explicit file ownership or separate worktrees and a designated integrator.
 
 For a fresh chat, first explain the scope and current state, then execute the requested milestone. Do not rebuild the app from scratch or install unnecessary frameworks. Keep source and `FULL_SOURCE.md` in sync using `scripts/build_bundle.py`. Treat existing thresholds as uncalibrated heuristics; changing them requires tests and documented rationale, never tuning only to make a live demo show a number.
+
+Mandatory release gates before cloud deployment:
+1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — The owner explicitly requires frontend/UI modifications before deploying to DigitalOcean. Do not deploy, create cloud resources, or enable billing until the owner provides UI requirements and approves the revised UI.
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
+3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key was previously exposed in chat transcripts. Before any public production deployment, it must be revoked in Google AI Studio and a fresh unexposed key configured directly in the cloud environment secrets.

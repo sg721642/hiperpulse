@@ -8,12 +8,12 @@ root_files=['START_HERE.md','README.md','MASTER_IMPLEMENTATION.md','AGENTS.md',
             'THIRD_PARTY_NOTICES.md','requirements.txt','requirements-lock.txt',
             'pytest.ini','.env.example','.gitignore','Dockerfile','.dockerignore']
 files=[root/p for p in root_files]
-for directory in ('app','web','tests','scripts','docs','samples'):
+for directory in ('app','web','tests','scripts','docs','samples','deploy'):
     files.extend(p for p in (root/directory).rglob('*')
                  if p.is_file() and '__pycache__' not in p.parts
-                 and p.suffix in ('.py','.js','.html','.css','.md','.json','.csv'))
+                 and p.suffix in ('.py','.js','.html','.css','.md','.json','.csv','.yaml','.yml'))
 files=sorted(set(files))
-code=[p for p in files if p.parent.name in ('app','web','tests','scripts')
+code=[p for p in files if p.parent.name in ('app','web','tests','scripts','deploy','digitalocean')
       or p.name in ('requirements.txt','requirements-lock.txt','pytest.ini',
                     '.env.example','.gitignore','Dockerfile','.dockerignore')]
 parts=['# HiperPulse — complete source snapshot\n',

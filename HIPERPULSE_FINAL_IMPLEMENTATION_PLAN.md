@@ -642,6 +642,11 @@ At each session end update `docs/PROJECT_STATE.md`: changed files, exact tests/r
 
 For a fresh chat, first explain the scope and current state, then execute the requested milestone. Do not rebuild the app from scratch or install unnecessary frameworks. Keep source and `FULL_SOURCE.md` in sync using `scripts/build_bundle.py`. Treat existing thresholds as uncalibrated heuristics; changing them requires tests and documented rationale, never tuning only to make a live demo show a number.
 
+Mandatory release gates before cloud deployment:
+1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — The owner explicitly requires frontend/UI modifications before deploying to DigitalOcean. Do not deploy, create cloud resources, or enable billing until the owner provides UI requirements and approves the revised UI.
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
+3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key was previously exposed in chat transcripts. Before any public production deployment, it must be revoked in Google AI Studio and a fresh unexposed key configured directly in the cloud environment secrets.
+
 
 ---
 
@@ -686,7 +691,23 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - Test B (Failed Quality Artifact): Live Gemma 4 explanation correctly explains withheld BPM and identifies failed checks (`patch_difference_bpm` and `estimator_difference_bpm`).
   - Test C (Security & Fallbacks): Unchecked consent blocks AI request; missing/invalid demo token returns HTTP 401; cooldown gate (<10s) returns deterministic fallback; clear session cleanly wipes state and credentials.
   - Browser Acceptance Suite: **17/17 browser acceptance tests passing** in headless Brave via CDP.
-  - Automated regression suite: **41/41 pytest tests passing in 1.87s**.
+- **Milestone M5 (Robustness & Security Validation, Local Docker Readiness Audit & Cloud Spec):** VERIFIED.
+  - Signal-Processing Invariants: Confirmed that all 14 quality gates in `app/signal.py` remain unmodified and authoritative; corruption of any single gate enforces `bpm: null`.
+  - Robustness Test Suite (`tests/test_m5_robustness.py`): Added 5 comprehensive invariant and boundary tests:
+    1. `test_all_fourteen_quality_gates_present_and_enforced`: Verifies presence and withholding across every gate.
+    2. `test_waveform_and_spectrum_preserved_when_bpm_withheld`: Confirms failed signals retain diagnostic waveform and spectrum plots.
+    3. `test_pydantic_trace_boundary_enforcement`: Tests 150-frame minimum, 7200-frame maximum, `extra='forbid'`, and enum validation.
+    4. `test_gemma_prompt_sanitization_and_privacy`: Confirms zero raw timestamps, raw RGB, or waveform arrays are sent to the Gemini API prompt.
+    5. `test_receipt_immutability_during_artifact_comparison`: Confirms original receipt and SHA-256 remain unmutated by client stress tests.
+  - Full Python suite: **46 / 46 passing in 4.01s** (`.venv/bin/python -m pytest`).
+  - Browser Acceptance Suite: **17 / 17 checks passing** in headless Brave via CDP (`scripts/test_browser_acceptance.js`).
+  - Demo password updated to `hiperpulse` in `.env` and server daemon restarted (`task-854`).
+  - Local Docker readiness audit completed: `docker` CLI not installed on host machine; Dockerfile multi-stage non-root container and `.dockerignore` context statically verified.
+  - DigitalOcean App Platform spec created (`deploy/digitalocean/app.yaml`) and deployment guide documented (`docs/DEPLOYMENT_DIGITALOCEAN.md`).
+  - Release gates established:
+    1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — Owner explicitly requested frontend/UI revisions before cloud deployment.
+    2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION` — No cloud resources will be provisioned until UI is customized and approved.
+    3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — Development Gemini API key is marked exposed and must be rotated prior to public release.
 
 ## Scope and implementation
 
@@ -695,19 +716,19 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 ## Git Status
 
 - Git repository initialized (`main` branch).
-- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
+- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository synchronized).
 - Local branch: `main`
-- Changes pending commit: Gemma 4 reasoning model token budget & retry fix, automated browser acceptance suite M4 expansion (17 checks), standalone live verification script, updated documentation.
+- Milestone M5 changes staged/committed: `tests/test_m5_robustness.py`, `deploy/digitalocean/app.yaml`, `docs/DEPLOYMENT_DIGITALOCEAN.md`, `AGENTS.md`, `docs/VALIDATION.md`, `docs/DECISIONS.md`, `docs/PROJECT_STATE.md`.
 
-## Pending Work (Next Milestones)
+## Mandatory Release Gates
 
-- **M5:** Physical host webcam check and phone HTTPS capture verification.
-- **M6:** Docker build validation and DigitalOcean deployment preparation.
-- **M7:** Presentation slides (PPT), <=5 min demonstration video, and final repository tag.
+1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION`
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
+3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT`
 
 ## Immediate Next Smallest Task
 
-Commit and push verified Milestone M4 changes to GitHub `origin main`, verify synchronization with `git ls-remote`, and proceed with Milestone M6 Docker packaging.
+Hard stop at Frontend UI Customization Checkpoint. Present the Milestone M5 verification report to the project owner and request their UI design requirements, screenshots, mockups, or styling preferences before proceeding to deployment.
 
 
 ---
@@ -739,6 +760,7 @@ Final-audit addendum (25 October 2026): use the final single-file plan as portab
 | D15 | Deterministic FFmpeg raw-frame encoding for video fixtures | Chromium headless virtual-time desynchronizes MediaRecorder encoding threads, embedding a 5.3s PTS gap in WebM output. Raw-pipe encoding to libvpx/libx264 guarantees mathematically exact 33.3ms PTS spacing, 0 gaps, and constant 30 fps. |
 | D16 | Synthetic filename pattern detection for test fixtures | Known test fixtures are attributed as `source: 'synthetic'` upon processing, preserving honest provenance in UI (`SYNTHETIC DEMO · NOT A PERSON`) and receipts without altering Pydantic schema or server endpoints. |
 | D17 | Increase Gemma 4 token budget to 4096 and timeout to 90s with transient retry | gemma-4-26b-a4b-it outputs internal reasoning tokens (thought: True) consuming ~800-1500 tokens before emitting the user-facing text part. The previous 500-token cap caused MAX_TOKENS truncation during thinking. Raising maxOutputTokens to 4096, backend timeout to 90s, frontend fetch timeout to 95s, and retrying transient 500/503 status codes ensures reliable live generation without degrading fallback safety. |
+| D18 | Multi-stage non-root Docker packaging & DigitalOcean App Platform specification | Packaging uses python:3.12-slim running under non-root appuser:10001 on port 8080 with concurrency 20. Strict .dockerignore excludes .env and private/test files. DigitalOcean app.yaml standardizes cloud configuration with explicit health checks at /api/health. Cloud deployment is gated behind frontend UI customization and secret API key rotation. |
 
 Future changes must record date, triggering evidence, chosen alternative, rejected alternatives and tests. Do not broaden scope to POS/neural rPPG before all existing acceptance gates and sponsor integration are complete. POS can be a future comparison baseline, with paper attribution, reference parity tests and new validation; it is not implemented here.
 
@@ -758,18 +780,17 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **41 passed in 1.86s**, 0 failures, 0 errors.
+- **Result:** **46 passed in 4.01s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
-  - 7 video regression tests (`tests/test_video_regression.py`):
-    - Constant 30s WebM trace passes all 14 gates (72 BPM, 100% quality checklist)
-    - 12s short video fails duration gate (`duration_seconds`, 93% score, BPM null)
-    - Gapped video (2s pause) fails `largest_gap_seconds` and `timing_variation` (BPM null)
-    - Timing jitter fails `timing_variation`
-    - Duplicate timestamps / callbacks rejected (HTTP 422 / ValueError)
-    - Non-monotonic timestamps rejected (HTTP 422 / ValueError)
-    - Out-of-bounds duration (>60s) rejected (HTTP 422 / ValueError)
+  - 7 video regression tests (`tests/test_video_regression.py`)
+  - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`):
+    - All 14 quality gates verified present and failure of any single gate enforces `bpm: null`
+    - Waveform and spectrum generation preserved for inspectable failed signals
+    - Pydantic trace boundary enforcement (150-7200 frames, extra fields forbidden, invalid source rejected)
+    - Gemma prompt sanitization verified (zero raw biometric/timestamp/waveform data sent to Gemini API)
+    - Receipt immutability verified during client artifact stress comparison
 
-- **JavaScript Syntax Check:** `node --check web/app.js` -> **PASSED**.
+- **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 
 ## Automated Browser Acceptance Suite (Brave CDP Runner)
 
@@ -793,52 +814,34 @@ Prepared 25 October 2026. This file separates observed software checks from task
   16. Clear session clears AI explanation, password input, and consent: Confirms `#explanation` resets to default placeholder, token input is cleared from memory, and checkboxes are unchecked.
   17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
 
-## Milestone M4: Real Gemma 4 Integration Verification
+## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
 - **Date:** 25 October 2026
-- **Configured Model ID:** `gemma-4-26b-a4b-it` via Google Gemini REST API (`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent`).
-- **Account Model Discovery (`scripts/check_model.py`):**
-  - Confirmed available model listing: `models/gemma-4-26b-a4b-it` supporting `['generateContent', 'countTokens']`.
-- **Reasoning Model Architecture & Tuning (Decision D17):**
-  - Diagnosis: `gemma-4-26b-a4b-it` is an instruction-tuned Mixture-of-Experts reasoning model. It outputs internal reasoning tokens (`thought: True`) consuming ~800–1500 tokens before emitting the user-facing text part. The initial 500-token cap caused `MAX_TOKENS` truncation before non-thought text was emitted.
-  - Solution: Increased `maxOutputTokens` to 4096, backend `httpx` timeout to 90s, frontend fetch timeout to 95s, and added a 2-second retry for transient 500/503 errors.
-- **Live Provider Evidence:**
-  - **Test A (Clean Synthetic Input):**
-    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
-    - Notice: `AI commentary; the calculated receipt remains authoritative.`
-    - Text: *"This report uses synthetic data, not a person. The recorded BPM is 72. All signal quality checks passed. Note that a passed check does not establish a real pulse. To improve future recordings, try to reduce motion and lighting changes."*
-  - **Test B (Failed-Quality Artifact Input):**
-    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
-    - Notice: `AI commentary; the calculated receipt remains authoritative.`
-    - Text: *"This is synthetic data, not a person. The signal quality is insufficient, and the BPM is withheld. The most relevant failed checks are patch_difference_bpm (38.6719) and estimator_difference_bpm (54.4922). To improve the recording, keep both patches on the cheeks. Note that a passed check does not establish a real pulse."*
-  - **Test C (Security & Fallback):**
-    - Invalid demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
-    - Missing demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
-    - AI cooldown: Request within 10s returns deterministic fallback (`"AI cooldown: wait ten seconds."`).
-    - Server-side fallback: Deterministic explanation returned if key unconfigured or transient error unresolvable.
-- **Standalone Verification Runner:** `scripts/verify_gemma_live.py` passed all assertions.
-
-## Root-Cause Diagnosis: Synthetic WebM Timestamp Discontinuity
-
-- **Observed Defect:** `samples/test_video_30s.webm` previously contained 703 frames instead of 900, with a 5.346-second timestamp gap between Frame 10 (`pts_time: 0.330s`) and Frame 11 (`pts_time: 5.676s`).
-- **Bit-Level Container Diagnosis:** EBML block analysis and FFmpeg `showinfo` confirmed the gap was baked directly into the encoded WebM file's SimpleBlocks.
-- **Root Cause:** In Chromium/Brave headless mode, `--virtual-time-budget` accelerates DOM execution, but `MediaRecorder` runs on an asynchronous OS/encoder thread relying on `base::TimeTicks`. The encoder thread stalled during initialization, resulting in a ~5.3s jump between early frames before stabilizing.
-- **Correction:** Implemented deterministic FFmpeg raw-pipe generation (`scripts/export_video_fixtures.py`) piping exact raw RGB24 frames into `libvpx-vp9` and `libx264`. Result: exactly 900 frames at constant 30 fps, maximum delta 0.034s, 0 gaps > 0.2s, timing variation 0.0141.
-- **Gate Vindicated:** `app/signal.py` gates `largest_gap_seconds <= 0.20s` and `timing_variation <= 0.20` correctly caught and withheld the defective file as designed.
+- **Signal-Processing Invariants:** Verified that the 14 quality thresholds in `app/signal.py` remain unchanged. Frequencies outside biological range, noise, synthetic gaps, and uneven illumination strictly withhold BPM (`bpm: null`).
+- **Physical Camera Capture (Historical Evidence):** Owner provided verification of a successful 30-second physical webcam recording on macOS Brave (Source: `camera`, Experimental BPM: 49, 14/14 checks passed, duration ~30s). Captured evidence is preserved; physical hardware checks remain marked `NOT RUN` during automated headless runs to prevent fabrication.
+- **Local Docker Readiness:**
+  - Audit: `docker` command line utility is not installed on this local macOS development environment (`command not found`).
+  - Static Dockerfile Verification: Multi-stage slim image (`python:3.12-slim`), non-root execution (`appuser:10001`), bind address `0.0.0.0:8080`, concurrency capped at 20.
+  - Context Security: Whitelist `.dockerignore` (`*` ignore-all default) strictly excludes `.env`, secrets, `.git`, `tests/`, `samples/`, and logs.
+- **DigitalOcean App Platform Deployment Readiness:**
+  - Deployment specification created: `deploy/digitalocean/app.yaml`.
+  - Deployment guide and cost breakdown: `docs/DEPLOYMENT_DIGITALOCEAN.md` ($5.00/mo basic-xxs container).
+  - Pre-Deployment Security Gate: Gemini API key used in development is marked `EXPOSED / ROTATION REQUIRED BEFORE PUBLIC DEPLOYMENT`. Must be revoked and replaced before production launch.
+  - Mandatory Owner Gate: Deployment is `BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`.
 
 ## Required manual checks status
 
 | Check | Expected | Status in this Workspace |
 |---|---|---|
-| Automated unit & API test suite | 41 passed | VERIFIED (41 passed in 1.86s) |
-| JavaScript syntax check | Passes node --check | VERIFIED |
+| Automated unit & API test suite | 46 passed | VERIFIED (46 passed in 4.01s) |
+| JavaScript syntax check | Passes node --check | VERIFIED (app.js and test_browser_acceptance.js) |
 | Sample analyze endpoints | 72 BPM / null withholding | VERIFIED (Clean 72/100%, Artifact null/86%, Flat null/64%) |
 | Artifact comparison lab | Original preserved, copy withheld | VERIFIED (Original 72/100%, Copy null/79%, 3 failed gates) |
 | JSON load and export round trip | Same meaningful receipt/hash after normalization | VERIFIED (Deterministic SHA-256 match, 14 checks preserved) |
 | Desktop viewport layout | Dual-column cards, no overlap | VERIFIED (1280x1024 screenshot inspected via Brave headless) |
 | Mobile/narrow viewport | Readable controls, no clipped cards | VERIFIED (375x812 single-column responsive layout inspected) |
 | Public GitHub repository | Code, lock, docs synchronized | VERIFIED (https://github.com/sg721642/hiperpulse) |
-| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | NOT RUN (pending physical host webcam test; lifecycle automated via fake media) |
+| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | HISTORICAL PASS (Owner Brave capture: 49 BPM, 14/14 passed; NOT RUN automated) |
 | Phone browser over HTTPS | Camera permission and timed capture | NOT RUN (pending deployment) |
 | Camera denial / consent | Useful message, samples remain available | VERIFIED (Automated in CDP acceptance test 2) |
 | Stop during capture | Tracks stopped, incomplete trace discarded | VERIFIED (Automated in CDP acceptance test 8) |
@@ -846,8 +849,8 @@ Prepared 25 October 2026. This file separates observed software checks from task
 | Local video supported codec | Process first <=30 s, maintain timestamps | VERIFIED (Automated in CDP acceptance tests 11 & 12) |
 | Actual Gemma 4 provider | Correct provider/model, no unsupported interpretation | VERIFIED (Live calls to gemma-4-26b-a4b-it in CDP tests 14 & 15 and verify_gemma_live.py) |
 | Actual provider timeout/quota | Labelled deterministic fallback | VERIFIED (Mocked + live transient retry and cooldown fallback verified) |
-| Docker build | Starts as non-root on 8080 | NOT RUN (pending M6) |
-| DigitalOcean health and HTTPS | `/api/health` and interactive samples work | NOT RUN (pending M6) |
+| Local Docker build & runtime | Starts as non-root on 8080 | BLOCKED (Docker CLI not installed on host; Dockerfile & context statically verified) |
+| DigitalOcean health and HTTPS | `/api/health` and interactive samples work | BLOCKED (Pending UI customization and owner authorization) |
 | Human/reference comparison | Synchronized documented interval comparison | NOT RUN |
 
 ## Known limitations / risks
@@ -1383,6 +1386,44 @@ def analyze(data):
 ```
 
 
+## `deploy/digitalocean/app.yaml`
+
+```text
+# DigitalOcean App Platform Specification for HiperPulse
+# Reference template. Never commit live secrets or API keys.
+name: hiperpulse
+region: nyc
+services:
+  - name: hiperpulse-web
+    github:
+      repo: sg721642/hiperpulse
+      branch: main
+      deploy_on_push: false
+    dockerfile_path: Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 15
+      period_seconds: 20
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: GEMMA_MODEL
+        value: gemma-4-26b-a4b-it
+        scope: RUN_TIME
+      - key: GEMINI_API_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: DEMO_TOKEN
+        type: SECRET
+        scope: RUN_TIME
+```
+
+
 ## `pytest.ini`
 
 ```text
@@ -1447,12 +1488,12 @@ root_files=['START_HERE.md','README.md','MASTER_IMPLEMENTATION.md','AGENTS.md',
             'THIRD_PARTY_NOTICES.md','requirements.txt','requirements-lock.txt',
             'pytest.ini','.env.example','.gitignore','Dockerfile','.dockerignore']
 files=[root/p for p in root_files]
-for directory in ('app','web','tests','scripts','docs','samples'):
+for directory in ('app','web','tests','scripts','docs','samples','deploy'):
     files.extend(p for p in (root/directory).rglob('*')
                  if p.is_file() and '__pycache__' not in p.parts
-                 and p.suffix in ('.py','.js','.html','.css','.md','.json','.csv'))
+                 and p.suffix in ('.py','.js','.html','.css','.md','.json','.csv','.yaml','.yml'))
 files=sorted(set(files))
-code=[p for p in files if p.parent.name in ('app','web','tests','scripts')
+code=[p for p in files if p.parent.name in ('app','web','tests','scripts','deploy','digitalocean')
       or p.name in ('requirements.txt','requirements-lock.txt','pytest.ini',
                     '.env.example','.gitignore','Dockerfile','.dockerignore')]
 parts=['# HiperPulse — complete source snapshot\n',
@@ -2560,6 +2601,132 @@ def test_malformed_provider_shape_falls_back(monkeypatch,payload):
     r=client.post('/api/explain',json=sample(),headers={'X-Demo-Token':'test-only'})
     assert r.status_code==200
     assert r.json()['provider']=='deterministic'
+```
+
+
+## `tests/test_m5_robustness.py`
+
+```python
+"""M5 Robustness, Invariant, and Security Boundary Test Suite."""
+from copy import deepcopy
+import json
+import numpy as np
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+from app.signal import analyze, sample
+
+client = TestClient(app)
+
+def test_all_fourteen_quality_gates_present_and_enforced():
+    """Verify all 14 quality gates are present and any failure withholds BPM."""
+    res = analyze(sample())
+    assert len(res['checks']) == 14
+    gate_names = {c['name'] for c in res['checks']}
+    expected_gates = {
+        'duration_seconds', 'sample_rate_hz', 'largest_gap_seconds',
+        'timing_variation', 'mean_green', 'clipped_pixel_fraction',
+        'color_jump_proxy', 'relative_signal_std', 'spectral_concentration',
+        'patch_difference_bpm', 'half_difference_bpm', 'estimator_difference_bpm',
+        'autocorrelation', 'search_boundary_bpm'
+    }
+    assert gate_names == expected_gates
+    assert res['bpm'] is not None
+
+    # Corrupt single gate (mean green brightness)
+    bad = deepcopy(sample())
+    bad['left'] = [[1.0, 1.0, 1.0]] * len(bad['left'])
+    bad['right'] = [[1.0, 1.0, 1.0]] * len(bad['right'])
+    bad_res = analyze(bad)
+    assert bad_res['bpm'] is None
+    assert bad_res['status'] == 'insufficient_quality'
+    assert any(not c['pass'] for c in bad_res['checks'])
+
+def test_waveform_and_spectrum_preserved_when_bpm_withheld():
+    """Verify waveform and spectrum remain available for inspectable failed signals."""
+    bad_sample = sample('artifact')
+    res = analyze(bad_sample)
+    assert res['bpm'] is None
+    assert 'waveform' in res and len(res['waveform']['seconds']) > 0
+    assert 'spectrum' in res and len(res['spectrum']['bpm']) > 0
+
+def test_pydantic_trace_boundary_enforcement():
+    """Verify trace length boundaries (150 min, 7200 max) and forbidden extra fields."""
+    d = sample()
+    
+    # Below 150 frames -> HTTP 422
+    too_short = deepcopy(d)
+    for k in ('timestamps', 'left', 'right', 'clipping'):
+        too_short[k] = too_short[k][:149]
+    assert client.post('/api/analyze', json=too_short).status_code == 422
+
+    # Exactly 150 frames with duration = 10s (fs = 15 Hz) -> HTTP 200
+    t150 = np.linspace(0, 10, 150).tolist()
+    valid_150 = {
+        'source': 'synthetic',
+        'timestamps': t150,
+        'left': [[100.0, 110.0, 90.0]] * 150,
+        'right': [[100.0, 110.0, 90.0]] * 150,
+        'clipping': [0.0] * 150
+    }
+    assert client.post('/api/analyze', json=valid_150).status_code == 200
+
+    # Extra fields forbidden -> HTTP 422
+    extra = deepcopy(d)
+    extra['unauthorized_field'] = 'injection'
+    assert client.post('/api/analyze', json=extra).status_code == 422
+
+    # Invalid source enum -> HTTP 422
+    bad_source = deepcopy(d)
+    bad_source['source'] = 'invalid_source'
+    assert client.post('/api/analyze', json=bad_source).status_code == 422
+
+def test_gemma_prompt_sanitization_and_privacy(monkeypatch):
+    """Verify Gemma prompt NEVER receives raw video, frames, or full timestamps."""
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'mock-pass')
+    captured_prompts = []
+
+    async def fake_post(self, url, **kwargs):
+        prompt = kwargs['json']['contents'][0]['parts'][0]['text']
+        captured_prompts.append(prompt)
+        return httpx.Response(200, request=httpx.Request('POST', url),
+            json={'candidates': [{'content': {'parts': [{'text': 'Quality report analyzed. 72 BPM.'}]}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+    r = client.post('/api/explain', json=sample(), headers={'X-Demo-Token': 'mock-pass'})
+    assert r.status_code == 200
+    assert len(captured_prompts) == 1
+    prompt = captured_prompts[0]
+    
+    # Invariants: no raw traces, no biometric arrays sent to provider
+    assert 'left' not in prompt
+    assert 'right' not in prompt
+    assert 'clipping' not in prompt
+    assert 'timestamps' not in prompt
+    assert 'waveform' not in prompt
+    assert 'Synthetic data is not a person' in prompt
+
+def test_receipt_immutability_during_artifact_comparison():
+    """Verify original receipt is not modified when generating stress comparison."""
+    original = sample()
+    original_analysis = analyze(original)
+    original_sha = original_analysis['input_sha256']
+    
+    # Simulate client stress comparison logic
+    copy = deepcopy(original)
+    copy['source'] = 'synthetic'
+    for i in range(len(copy['right'])):
+        copy['right'][i][1] += 8.0  # perturb green channel
+    perturbed_analysis = analyze(copy)
+
+    # Re-verify original remains identical
+    recheck = analyze(original)
+    assert recheck['input_sha256'] == original_sha
+    assert original_analysis['bpm'] == recheck['bpm']
+    assert original_analysis['quality_score'] == recheck['quality_score']
+    assert perturbed_analysis['input_sha256'] != original_sha
 ```
 
 

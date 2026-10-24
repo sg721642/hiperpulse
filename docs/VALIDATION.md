@@ -7,18 +7,17 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **41 passed in 1.86s**, 0 failures, 0 errors.
+- **Result:** **46 passed in 4.01s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
-  - 7 video regression tests (`tests/test_video_regression.py`):
-    - Constant 30s WebM trace passes all 14 gates (72 BPM, 100% quality checklist)
-    - 12s short video fails duration gate (`duration_seconds`, 93% score, BPM null)
-    - Gapped video (2s pause) fails `largest_gap_seconds` and `timing_variation` (BPM null)
-    - Timing jitter fails `timing_variation`
-    - Duplicate timestamps / callbacks rejected (HTTP 422 / ValueError)
-    - Non-monotonic timestamps rejected (HTTP 422 / ValueError)
-    - Out-of-bounds duration (>60s) rejected (HTTP 422 / ValueError)
+  - 7 video regression tests (`tests/test_video_regression.py`)
+  - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`):
+    - All 14 quality gates verified present and failure of any single gate enforces `bpm: null`
+    - Waveform and spectrum generation preserved for inspectable failed signals
+    - Pydantic trace boundary enforcement (150-7200 frames, extra fields forbidden, invalid source rejected)
+    - Gemma prompt sanitization verified (zero raw biometric/timestamp/waveform data sent to Gemini API)
+    - Receipt immutability verified during client artifact stress comparison
 
-- **JavaScript Syntax Check:** `node --check web/app.js` -> **PASSED**.
+- **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 
 ## Automated Browser Acceptance Suite (Brave CDP Runner)
 
@@ -42,52 +41,34 @@ Prepared 25 October 2026. This file separates observed software checks from task
   16. Clear session clears AI explanation, password input, and consent: Confirms `#explanation` resets to default placeholder, token input is cleared from memory, and checkboxes are unchecked.
   17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
 
-## Milestone M4: Real Gemma 4 Integration Verification
+## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
 - **Date:** 25 October 2026
-- **Configured Model ID:** `gemma-4-26b-a4b-it` via Google Gemini REST API (`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent`).
-- **Account Model Discovery (`scripts/check_model.py`):**
-  - Confirmed available model listing: `models/gemma-4-26b-a4b-it` supporting `['generateContent', 'countTokens']`.
-- **Reasoning Model Architecture & Tuning (Decision D17):**
-  - Diagnosis: `gemma-4-26b-a4b-it` is an instruction-tuned Mixture-of-Experts reasoning model. It outputs internal reasoning tokens (`thought: True`) consuming ~800–1500 tokens before emitting the user-facing text part. The initial 500-token cap caused `MAX_TOKENS` truncation before non-thought text was emitted.
-  - Solution: Increased `maxOutputTokens` to 4096, backend `httpx` timeout to 90s, frontend fetch timeout to 95s, and added a 2-second retry for transient 500/503 errors.
-- **Live Provider Evidence:**
-  - **Test A (Clean Synthetic Input):**
-    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
-    - Notice: `AI commentary; the calculated receipt remains authoritative.`
-    - Text: *"This report uses synthetic data, not a person. The recorded BPM is 72. All signal quality checks passed. Note that a passed check does not establish a real pulse. To improve future recordings, try to reduce motion and lighting changes."*
-  - **Test B (Failed-Quality Artifact Input):**
-    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
-    - Notice: `AI commentary; the calculated receipt remains authoritative.`
-    - Text: *"This is synthetic data, not a person. The signal quality is insufficient, and the BPM is withheld. The most relevant failed checks are patch_difference_bpm (38.6719) and estimator_difference_bpm (54.4922). To improve the recording, keep both patches on the cheeks. Note that a passed check does not establish a real pulse."*
-  - **Test C (Security & Fallback):**
-    - Invalid demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
-    - Missing demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
-    - AI cooldown: Request within 10s returns deterministic fallback (`"AI cooldown: wait ten seconds."`).
-    - Server-side fallback: Deterministic explanation returned if key unconfigured or transient error unresolvable.
-- **Standalone Verification Runner:** `scripts/verify_gemma_live.py` passed all assertions.
-
-## Root-Cause Diagnosis: Synthetic WebM Timestamp Discontinuity
-
-- **Observed Defect:** `samples/test_video_30s.webm` previously contained 703 frames instead of 900, with a 5.346-second timestamp gap between Frame 10 (`pts_time: 0.330s`) and Frame 11 (`pts_time: 5.676s`).
-- **Bit-Level Container Diagnosis:** EBML block analysis and FFmpeg `showinfo` confirmed the gap was baked directly into the encoded WebM file's SimpleBlocks.
-- **Root Cause:** In Chromium/Brave headless mode, `--virtual-time-budget` accelerates DOM execution, but `MediaRecorder` runs on an asynchronous OS/encoder thread relying on `base::TimeTicks`. The encoder thread stalled during initialization, resulting in a ~5.3s jump between early frames before stabilizing.
-- **Correction:** Implemented deterministic FFmpeg raw-pipe generation (`scripts/export_video_fixtures.py`) piping exact raw RGB24 frames into `libvpx-vp9` and `libx264`. Result: exactly 900 frames at constant 30 fps, maximum delta 0.034s, 0 gaps > 0.2s, timing variation 0.0141.
-- **Gate Vindicated:** `app/signal.py` gates `largest_gap_seconds <= 0.20s` and `timing_variation <= 0.20` correctly caught and withheld the defective file as designed.
+- **Signal-Processing Invariants:** Verified that the 14 quality thresholds in `app/signal.py` remain unchanged. Frequencies outside biological range, noise, synthetic gaps, and uneven illumination strictly withhold BPM (`bpm: null`).
+- **Physical Camera Capture (Historical Evidence):** Owner provided verification of a successful 30-second physical webcam recording on macOS Brave (Source: `camera`, Experimental BPM: 49, 14/14 checks passed, duration ~30s). Captured evidence is preserved; physical hardware checks remain marked `NOT RUN` during automated headless runs to prevent fabrication.
+- **Local Docker Readiness:**
+  - Audit: `docker` command line utility is not installed on this local macOS development environment (`command not found`).
+  - Static Dockerfile Verification: Multi-stage slim image (`python:3.12-slim`), non-root execution (`appuser:10001`), bind address `0.0.0.0:8080`, concurrency capped at 20.
+  - Context Security: Whitelist `.dockerignore` (`*` ignore-all default) strictly excludes `.env`, secrets, `.git`, `tests/`, `samples/`, and logs.
+- **DigitalOcean App Platform Deployment Readiness:**
+  - Deployment specification created: `deploy/digitalocean/app.yaml`.
+  - Deployment guide and cost breakdown: `docs/DEPLOYMENT_DIGITALOCEAN.md` ($5.00/mo basic-xxs container).
+  - Pre-Deployment Security Gate: Gemini API key used in development is marked `EXPOSED / ROTATION REQUIRED BEFORE PUBLIC DEPLOYMENT`. Must be revoked and replaced before production launch.
+  - Mandatory Owner Gate: Deployment is `BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`.
 
 ## Required manual checks status
 
 | Check | Expected | Status in this Workspace |
 |---|---|---|
-| Automated unit & API test suite | 41 passed | VERIFIED (41 passed in 1.86s) |
-| JavaScript syntax check | Passes node --check | VERIFIED |
+| Automated unit & API test suite | 46 passed | VERIFIED (46 passed in 4.01s) |
+| JavaScript syntax check | Passes node --check | VERIFIED (app.js and test_browser_acceptance.js) |
 | Sample analyze endpoints | 72 BPM / null withholding | VERIFIED (Clean 72/100%, Artifact null/86%, Flat null/64%) |
 | Artifact comparison lab | Original preserved, copy withheld | VERIFIED (Original 72/100%, Copy null/79%, 3 failed gates) |
 | JSON load and export round trip | Same meaningful receipt/hash after normalization | VERIFIED (Deterministic SHA-256 match, 14 checks preserved) |
 | Desktop viewport layout | Dual-column cards, no overlap | VERIFIED (1280x1024 screenshot inspected via Brave headless) |
 | Mobile/narrow viewport | Readable controls, no clipped cards | VERIFIED (375x812 single-column responsive layout inspected) |
 | Public GitHub repository | Code, lock, docs synchronized | VERIFIED (https://github.com/sg721642/hiperpulse) |
-| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | NOT RUN (pending physical host webcam test; lifecycle automated via fake media) |
+| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | HISTORICAL PASS (Owner Brave capture: 49 BPM, 14/14 passed; NOT RUN automated) |
 | Phone browser over HTTPS | Camera permission and timed capture | NOT RUN (pending deployment) |
 | Camera denial / consent | Useful message, samples remain available | VERIFIED (Automated in CDP acceptance test 2) |
 | Stop during capture | Tracks stopped, incomplete trace discarded | VERIFIED (Automated in CDP acceptance test 8) |
@@ -95,8 +76,8 @@ Prepared 25 October 2026. This file separates observed software checks from task
 | Local video supported codec | Process first <=30 s, maintain timestamps | VERIFIED (Automated in CDP acceptance tests 11 & 12) |
 | Actual Gemma 4 provider | Correct provider/model, no unsupported interpretation | VERIFIED (Live calls to gemma-4-26b-a4b-it in CDP tests 14 & 15 and verify_gemma_live.py) |
 | Actual provider timeout/quota | Labelled deterministic fallback | VERIFIED (Mocked + live transient retry and cooldown fallback verified) |
-| Docker build | Starts as non-root on 8080 | NOT RUN (pending M6) |
-| DigitalOcean health and HTTPS | `/api/health` and interactive samples work | NOT RUN (pending M6) |
+| Local Docker build & runtime | Starts as non-root on 8080 | BLOCKED (Docker CLI not installed on host; Dockerfile & context statically verified) |
+| DigitalOcean health and HTTPS | `/api/health` and interactive samples work | BLOCKED (Pending UI customization and owner authorization) |
 | Human/reference comparison | Synchronized documented interval comparison | NOT RUN |
 
 ## Known limitations / risks

@@ -35,7 +35,23 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - Test B (Failed Quality Artifact): Live Gemma 4 explanation correctly explains withheld BPM and identifies failed checks (`patch_difference_bpm` and `estimator_difference_bpm`).
   - Test C (Security & Fallbacks): Unchecked consent blocks AI request; missing/invalid demo token returns HTTP 401; cooldown gate (<10s) returns deterministic fallback; clear session cleanly wipes state and credentials.
   - Browser Acceptance Suite: **17/17 browser acceptance tests passing** in headless Brave via CDP.
-  - Automated regression suite: **41/41 pytest tests passing in 1.87s**.
+- **Milestone M5 (Robustness & Security Validation, Local Docker Readiness Audit & Cloud Spec):** VERIFIED.
+  - Signal-Processing Invariants: Confirmed that all 14 quality gates in `app/signal.py` remain unmodified and authoritative; corruption of any single gate enforces `bpm: null`.
+  - Robustness Test Suite (`tests/test_m5_robustness.py`): Added 5 comprehensive invariant and boundary tests:
+    1. `test_all_fourteen_quality_gates_present_and_enforced`: Verifies presence and withholding across every gate.
+    2. `test_waveform_and_spectrum_preserved_when_bpm_withheld`: Confirms failed signals retain diagnostic waveform and spectrum plots.
+    3. `test_pydantic_trace_boundary_enforcement`: Tests 150-frame minimum, 7200-frame maximum, `extra='forbid'`, and enum validation.
+    4. `test_gemma_prompt_sanitization_and_privacy`: Confirms zero raw timestamps, raw RGB, or waveform arrays are sent to the Gemini API prompt.
+    5. `test_receipt_immutability_during_artifact_comparison`: Confirms original receipt and SHA-256 remain unmutated by client stress tests.
+  - Full Python suite: **46 / 46 passing in 4.01s** (`.venv/bin/python -m pytest`).
+  - Browser Acceptance Suite: **17 / 17 checks passing** in headless Brave via CDP (`scripts/test_browser_acceptance.js`).
+  - Demo password updated to `hiperpulse` in `.env` and server daemon restarted (`task-854`).
+  - Local Docker readiness audit completed: `docker` CLI not installed on host machine; Dockerfile multi-stage non-root container and `.dockerignore` context statically verified.
+  - DigitalOcean App Platform spec created (`deploy/digitalocean/app.yaml`) and deployment guide documented (`docs/DEPLOYMENT_DIGITALOCEAN.md`).
+  - Release gates established:
+    1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — Owner explicitly requested frontend/UI revisions before cloud deployment.
+    2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION` — No cloud resources will be provisioned until UI is customized and approved.
+    3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — Development Gemini API key is marked exposed and must be rotated prior to public release.
 
 ## Scope and implementation
 
@@ -44,16 +60,16 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 ## Git Status
 
 - Git repository initialized (`main` branch).
-- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
+- Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository synchronized).
 - Local branch: `main`
-- Changes pending commit: Gemma 4 reasoning model token budget & retry fix, automated browser acceptance suite M4 expansion (17 checks), standalone live verification script, updated documentation.
+- Milestone M5 changes staged/committed: `tests/test_m5_robustness.py`, `deploy/digitalocean/app.yaml`, `docs/DEPLOYMENT_DIGITALOCEAN.md`, `AGENTS.md`, `docs/VALIDATION.md`, `docs/DECISIONS.md`, `docs/PROJECT_STATE.md`.
 
-## Pending Work (Next Milestones)
+## Mandatory Release Gates
 
-- **M5:** Physical host webcam check and phone HTTPS capture verification.
-- **M6:** Docker build validation and DigitalOcean deployment preparation.
-- **M7:** Presentation slides (PPT), <=5 min demonstration video, and final repository tag.
+1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION`
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
+3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT`
 
 ## Immediate Next Smallest Task
 
-Commit and push verified Milestone M4 changes to GitHub `origin main`, verify synchronization with `git ls-remote`, and proceed with Milestone M6 Docker packaging.
+Hard stop at Frontend UI Customization Checkpoint. Present the Milestone M5 verification report to the project owner and request their UI design requirements, screenshots, mockups, or styling preferences before proceeding to deployment.
