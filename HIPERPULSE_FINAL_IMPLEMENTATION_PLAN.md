@@ -678,8 +678,8 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 
 - Git repository initialized (`main` branch).
 - Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
-- Local HEAD SHA: `062a1d6847516214381eb7ba84c0f7283b493566`
-- Remote main SHA: `062a1d6847516214381eb7ba84c0f7283b493566` (Verified match via `git ls-remote`).
+- Local HEAD SHA: `5feb50e9ed6f13e9c2204fd2d4dde617acfd24a4`
+- Remote main SHA: `5feb50e9ed6f13e9c2204fd2d4dde617acfd24a4` (Verified match via `git ls-remote`).
 - Staged / Working Tree: Clean.
 
 ## Pending Work (Next Milestones)
