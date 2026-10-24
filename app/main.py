@@ -3,6 +3,7 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import time
 from pathlib import Path
 
@@ -21,6 +22,28 @@ ai_lock = asyncio.Lock()
 ai_semaphore = asyncio.Semaphore(2)
 AI_TIMEOUT_BUDGET_SECONDS = 60.0
 last_ai_call = 0.0
+
+
+def get_git_sha() -> str:
+    env_sha = os.getenv('GIT_SHA', '').strip()
+    if env_sha:
+        return env_sha
+    build_info_path = ROOT / 'build_info.json'
+    if build_info_path.is_file():
+        try:
+            info = json.loads(build_info_path.read_text(encoding='utf-8'))
+            if info.get('git_sha'):
+                return str(info['git_sha']).strip()
+        except Exception:
+            pass
+    try:
+        res = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+                             capture_output=True, text=True, timeout=2)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return 'unknown'
 
 
 class Trace(BaseModel):
@@ -59,7 +82,18 @@ async def bad_signal(request, exc):
 
 @app.get('/api/health')
 def health():
-    return {'ok':True, 'ai_configured':bool(os.getenv('GEMINI_API_KEY') and os.getenv('DEMO_TOKEN'))}
+    return {
+        'ok': True,
+        'version': '1.1',
+        'algorithm': 'green-evidence-1.1',
+        'git_sha': get_git_sha(),
+        'ai_configured': bool(os.getenv('GEMINI_API_KEY') and os.getenv('DEMO_TOKEN'))
+    }
+
+
+@app.get('/api/meta')
+def meta():
+    return health()
 
 
 @app.get('/api/sample/{kind}')

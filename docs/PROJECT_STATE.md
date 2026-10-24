@@ -62,7 +62,13 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - **Differentiator 1 (Guided Retake):** Rule-based actionable advice by failure category; transient in-memory session comparison with score and gate deltas.
   - **Differentiator 2 (Artifact Challenge Lab):** Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination demonstrating optical rPPG limits).
   - **Differentiator 3 (Judge Evidence Card):** Verifiable download of `hiperpulse-judge-evidence.json` with commit SHA, canonical signal hash, checklist, and disclaimers.
-  - **Automated Test Status:** **59 / 59 Python tests passing** in 5.22s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
+  - **Milestone F (Post-Audit Consistency Fixes & Pre-UI Verification):** VERIFIED.
+    - Synchronized all 14 quality check IDs in `getRetakeAdvice()` and added deterministic category mapping.
+    - Implemented dynamic Git commit provenance via `/api/health` and `/api/meta` with regression test asserting no stale SHA.
+    - Corrected Challenge A continuity rule to `<= 0.20 s` and refactored explanations to dynamic receipt analysis.
+    - Implemented dashed amber plot overlays (`plotOverlay`) for original vs challenge visual comparison.
+    - Solved CI collection failure via `pythonpath = .` and expanded `.github/workflows/ci.yml` into 3 jobs: `test`, `browser-acceptance`, and `docker-smoke`.
+  - **Automated Test Status:** **62 / 62 Python tests passing** in 4.96s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
 
 ## Scope and implementation
 

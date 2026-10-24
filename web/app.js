@@ -4,7 +4,18 @@ const video = $('video');
 let stream = null, localUrl = null, currentTrace = null, receipt = null;
 let capturing = false, busy = false, generation = 0, operation = 0, captureTimer = null;
 let selectedVideo = false, videoUsable = false, selectedFileName = '';
-let previousSession = null, lastAiExplanation = null;
+let previousSession = null, lastAiExplanation = null, activeChallenge = null;
+let buildMeta = { version: '1.1', algorithm: 'green-evidence-1.1', git_sha: 'unknown' };
+function initBuildMeta() {
+  request('/api/health').then(h => {
+    if (h && typeof h === 'object') {
+      if (h.git_sha) buildMeta.git_sha = h.git_sha;
+      if (h.version) buildMeta.version = h.version;
+      if (h.algorithm) buildMeta.algorithm = h.algorithm;
+    }
+  }).catch(() => {});
+}
+initBuildMeta();
 const scratch = document.createElement('canvas');
 scratch.width = 160; scratch.height = 120;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
@@ -33,7 +44,7 @@ function stopMedia() {
   controls();
 }
 function blank() {
-  currentTrace = null; receipt = null; lastAiExplanation = null;
+  currentTrace = null; receipt = null; lastAiExplanation = null; activeChallenge = null;
   $('bpm').textContent = '—'; $('quality').textContent = '—';
   $('source').textContent = 'NO INPUT YET'; $('decision').textContent = 'Choose an input to begin.';
   $('checks').replaceChildren(); $('comparison').textContent = '';
@@ -68,32 +79,78 @@ function plot(id, xs, ys, color) {
   c.fillStyle='#a8bcba'; c.font='15px system-ui';
   c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
 }
+function plotOverlay(id, xs, ys1, ys2, color1, color2) {
+  const canvas = $(id), c = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, pad = 28;
+  c.clearRect(0,0,w,h);
+  if (!xs.length) return;
+  const allYs = [...ys1, ...(ys2 || [])];
+  let low = Math.min(...allYs), high = Math.max(...allYs);
+  if (high-low < 1e-8) {low = -1; high = 1;}
+  const x = v => pad+(v-xs[0])/(xs.at(-1)-xs[0] || 1)*(w-2*pad);
+  const y = v => h-pad-(v-low)/(high-low)*(h-2*pad);
+  c.strokeStyle='#263c40'; c.lineWidth=1;
+  for(let i=0;i<=4;i++){const yy=pad+i*(h-2*pad)/4;c.beginPath();c.moveTo(pad,yy);c.lineTo(w-pad,yy);c.stroke();}
+  // Original curve (solid)
+  c.strokeStyle=color1; c.lineWidth=2; c.setLineDash([]); c.beginPath();
+  ys1.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+  // Challenge curve (dashed)
+  if (ys2 && ys2.length) {
+    c.strokeStyle=color2; c.lineWidth=2; c.setLineDash([5, 4]); c.beginPath();
+    ys2.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+    c.setLineDash([]);
+  }
+  c.fillStyle='#a8bcba'; c.font='15px system-ui';
+  c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
+}
 function getRetakeAdvice(checks) {
-  if (!checks || !checks.length) return 'No quality checks available.';
+  if (!checks || !checks.length) {
+    return { primary: 'No quality checks available.', category: 'none', details: [] };
+  }
   const failed = checks.filter(c => !c.pass);
   if (!failed.length) {
-    return 'All heuristic checks passed. Signal continuity, lighting, and bilateral symmetry are within tolerances. Remember: heuristic check passage does not prove biological accuracy.';
+    return {
+      primary: 'All 14 quality checks passed. Signal continuity, lighting, and bilateral symmetry satisfy experimental tolerances. (Note: Heuristic check passage demonstrates signal quality, not clinical accuracy.)',
+      category: 'accepted',
+      details: []
+    };
   }
   const failedNames = new Set(failed.map(c => c.name));
-  const advice = [];
-  if (failedNames.has('exposure_range') || failedNames.has('color_clipping_fraction')) {
-    advice.push('• Lighting: Adjust ambient light. Avoid strong backlights, direct sun, or dark shadows. Keep both cheeks evenly illuminated without bright reflections or darkness.');
+  let primary = '';
+  let category = '';
+
+  // Priority 1: Lighting & Exposure
+  if (failedNames.has('mean_green') || failedNames.has('clipped_pixel_fraction')) {
+    category = 'lighting';
+    primary = 'Adjust lighting: Ensure even, indirect illumination across both cheeks. Avoid direct backlights, bright glare, and deep shadows so neither patch is underexposed (<20) or overexposed (>235).';
   }
-  if (failedNames.has('snr_db') || failedNames.has('spectral_entropy') || failedNames.has('peak_prominence')) {
-    advice.push('• Stability: Minimize head and facial motion. Sit down comfortably, rest your chin or head if needed, breathe normally, and avoid talking or smiling during the capture.');
+  // Priority 2: Movement & Facial Stability
+  else if (failedNames.has('color_jump_proxy') || failedNames.has('relative_signal_std') || failedNames.has('spectral_concentration') || failedNames.has('autocorrelation')) {
+    category = 'stability';
+    primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
   }
-  if (failedNames.has('duration_seconds') || failedNames.has('sample_rate_hz') || failedNames.has('largest_gap_seconds')) {
-    advice.push('• Timing & System: Keep the browser tab active in the foreground throughout the recording. Close background tabs or heavy applications to prevent camera frame drops.');
+  // Priority 3: Facial Alignment & Bilateral Symmetry
+  else if (failedNames.has('patch_difference_bpm') || failedNames.has('half_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
+    category = 'alignment';
+    primary = 'Re-align cheek regions: Position the guide boxes squarely over smooth bare cheek skin below your eyes, clear of facial hair, glasses, lips, or uneven shadows.';
   }
-  if (failedNames.has('patch_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
-    advice.push('• Alignment: Reposition your face so both bounding boxes rest squarely on smooth cheek skin, completely clear of eyes, lips, beard, hair, or shadows.');
+  // Priority 4: Duration & Timing Continuity
+  else if (failedNames.has('duration_seconds') || failedNames.has('sample_rate_hz') || failedNames.has('largest_gap_seconds') || failedNames.has('timing_variation')) {
+    category = 'timing';
+    primary = 'Ensure continuous timing: Keep the browser tab focused in the foreground for the full 30 seconds. Close heavy background applications to prevent frame drops and timing jitter.';
   }
-  if (!advice.length) {
-    for (const c of failed) {
-      if (c.action) advice.push(`• ${c.name.replaceAll('_', ' ')}: ${c.action}`);
-    }
+  // Priority 5: Rate Range / Search Boundary
+  else if (failedNames.has('search_boundary_bpm')) {
+    category = 'boundary';
+    primary = 'Rate out of bounds: The detected dominant frequency is outside the supported physiological window (45–177 BPM). Verify lighting and remain still while retaking.';
   }
-  return advice.join('\n');
+  else {
+    category = 'general';
+    primary = 'Improve recording quality: Address the specific failed signal-quality gates listed below and retake capture.';
+  }
+
+  const details = failed.map(c => `• ${c.name.replaceAll('_', ' ')}: ${c.action} (${c.value}, rule: ${c.rule})`);
+  return { primary, category, details };
 }
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
@@ -109,8 +166,13 @@ function render(r) {
     if(!check.pass){const p=document.createElement('div');p.textContent=check.action;row.append(p);}
     $('checks').append(row);
   }
+  const advice = getRetakeAdvice(r.checks);
   if ($('retakeAdvice')) {
-    $('retakeAdvice').textContent = getRetakeAdvice(r.checks);
+    let text = advice.primary;
+    if (advice.details.length) {
+      text += '\n\nFailed check actions:\n' + advice.details.join('\n');
+    }
+    $('retakeAdvice').textContent = text;
   }
   if ($('retakeComparison')) {
     if (previousSession && previousSession.signal_sha256 !== r.signal_sha256) {
@@ -234,11 +296,13 @@ $('trace').onclick=()=>currentTrace&&download(currentTrace,'hiperpulse-trace.jso
 if ($('evidenceCard')) {
   $('evidenceCard').onclick = () => {
     if (!receipt) return;
+    const advice = getRetakeAdvice(receipt.checks);
     const card = {
       application: 'HiperPulse',
-      version: '1.1',
-      algorithm: receipt.algorithm || 'green-evidence-1.1',
-      git_sha: '06ec6c7cdefa54520fe020f7f0e8faeffe725432',
+      version: buildMeta.version || '1.1',
+      algorithm: receipt.algorithm || buildMeta.algorithm || 'green-evidence-1.1',
+      git_sha: buildMeta.git_sha || 'unknown',
+      provenance_note: 'Canonical signal_sha256 identifies the mathematical signal data. git_sha identifies the software build revision. Neither constitutes a cryptographic signature of real human or camera origin.',
       timestamp_utc: new Date().toISOString(),
       declared_source: receipt.source,
       ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
@@ -261,7 +325,10 @@ if ($('evidenceCard')) {
       passed_checks: receipt.checks.filter(c => c.pass).map(c => c.name),
       failed_checks: receipt.checks.filter(c => !c.pass).map(c => c.name),
       exposure_metrics: receipt.exposure_metrics || null,
-      retake_guidance: getRetakeAdvice(receipt.checks),
+      retake_guidance: advice.primary,
+      retake_category: advice.category,
+      retake_failed_details: advice.details,
+      challenge_experiment: activeChallenge || null,
       ai_explanation: lastAiExplanation || null,
       disclaimers: [
         'Experimental wellness prototype. Not a medical device.',
@@ -282,8 +349,8 @@ if ($('retakeAction')) {
     }
   };
 }
-async function runChallenge(modifier, label, explanation) {
-  if (!currentTrace) return;
+async function executeChallenge(label, transformDesc, params, modifier) {
+  if (!currentTrace || !receipt) return;
   const op = operation; busy = true; controls();
   const copy = structuredClone(currentTrace);
   copy.source = 'synthetic';
@@ -291,8 +358,53 @@ async function runChallenge(modifier, label, explanation) {
   try {
     const result = await request('/api/analyze', copy);
     if (op !== operation) return;
-    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
-    $('comparison').textContent = `[${label}]\nOriginal: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}.\n${explanation}\n(Original input and receipt remain unchanged)`;
+
+    const failedGates = result.checks.filter(c => !c.pass).map(c => c.name);
+    let outcomeAnalysis = '';
+
+    if (label.includes('Timing Dropout')) {
+      const gapCheck = result.checks.find(c => c.name === 'largest_gap_seconds');
+      if (gapCheck && !gapCheck.pass) {
+        outcomeAnalysis = `Continuity gate tripped as expected: largest frame gap was ${gapCheck.value} s (rule: <= 0.20 s). Estimate was safely withheld (null BPM).`;
+      } else {
+        outcomeAnalysis = `Continuity gate did not trip: largest frame gap was ${gapCheck ? gapCheck.value : '—'} s.`;
+      }
+    } else if (label.includes('Conflicting Patch')) {
+      const patchDiffCheck = result.checks.find(c => c.name === 'patch_difference_bpm');
+      const estDiffCheck = result.checks.find(c => c.name === 'estimator_difference_bpm');
+      if ((patchDiffCheck && !patchDiffCheck.pass) || (estDiffCheck && !estDiffCheck.pass)) {
+        outcomeAnalysis = `Inter-patch discordance detected: patch difference was ${patchDiffCheck ? patchDiffCheck.value : '—'} BPM (limit <= 8.0 BPM). Estimate was safely withheld.`;
+      } else if (result.bpm === null) {
+        outcomeAnalysis = `Estimate was withheld due to failed quality gates: ${failedGates.join(', ')}.`;
+      } else {
+        outcomeAnalysis = `Unexpected: Inter-patch discordance did not trip quality gates; candidate was ${result.bpm} BPM.`;
+      }
+    } else if (label.includes('Shared Periodic Light')) {
+      if (result.bpm !== null && result.quality_score === 100) {
+        outcomeAnalysis = `CRITICAL SCIENTIFIC LIMITATION OBSERVED: Artificial 1.2 Hz (72 BPM) illumination applied to BOTH patches simultaneously passed all 14 heuristic checks (${result.bpm} BPM, 100% score)! Because both patches received identical synchronous modulation, inter-patch consistency (0.0 BPM difference) and spectral concentration passed. This proves that passing heuristic checks does NOT verify biological arterial pulse origin.`;
+      } else {
+        outcomeAnalysis = `Shared periodic illumination did not pass all gates on this signal; failed: ${failedGates.join(', ') || 'none'}. (BPM: ${result.bpm ?? 'withheld'}).`;
+      }
+    }
+
+    activeChallenge = {
+      challenge_type: label,
+      synthetic_transformation: transformDesc,
+      parameters: params,
+      original_signal_sha256: receipt.signal_sha256,
+      transformed_signal_sha256: result.signal_sha256,
+      actual_failed_gates: failedGates,
+      actual_passed_gates: result.checks.filter(c => c.pass).map(c => c.name),
+      bpm_result: result.bpm,
+      quality_score: result.quality_score,
+      timestamp_utc: new Date().toISOString()
+    };
+
+    $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failedGates.map(n => n.replaceAll('_', ' ')).join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[${label} Result Analysis: ${outcomeAnalysis}]`;
+
+    // Render visual before-vs-after overlay on waveform and spectrum (solid mint = original, dashed amber = challenge)
+    plotOverlay('wave', receipt.waveform.seconds, receipt.waveform.normalized_amplitude, result.waveform.normalized_amplitude, '#8ae8c4', '#f1cc8b');
+    plotOverlay('spectrum', receipt.spectrum.bpm, receipt.spectrum.relative_power, result.spectrum.relative_power, '#8ae8c4', '#f1cc8b');
   } catch (e) {
     status(e.message);
   } finally {
@@ -300,29 +412,31 @@ async function runChallenge(modifier, label, explanation) {
   }
 }
 function runChallengeA() {
-  runChallenge(copy => {
-    const mid = Math.floor(copy.timestamps.length / 2);
-    for (let i = mid; i < copy.timestamps.length; i++) copy.timestamps[i] += 0.35;
-  }, 'Challenge A: Timing Dropout', 'Scientific Takeaway: Injected a 0.35s frame gap midway. The continuity gate (largest_gap_seconds <= 0.25s) detected the frame discontinuity and safely withheld the estimate.');
+  executeChallenge('Challenge A: Timing Dropout',
+    'Inject 0.35s PTS gap at sample midpoint',
+    { gap_seconds: 0.35, threshold_rule: '<= 0.20 s' },
+    copy => {
+      const mid = Math.floor(copy.timestamps.length / 2);
+      for (let i = mid; i < copy.timestamps.length; i++) copy.timestamps[i] += 0.35;
+    });
 }
 function runChallengeB() {
-  if (!currentTrace) return;
-  const op = operation; busy = true; controls();
-  const copy = structuredClone(currentTrace);
-  copy.source = 'synthetic';
-  copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * 1.85 * copy.timestamps[i]))) : v));
-  request('/api/analyze', copy).then(result => {
-    if (op !== operation) return;
-    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
-    $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[Challenge B: Conflicting Patch Takeaway: Injected 1.85 Hz sine into right patch; bilateral discrepancy was detected and estimate withheld.]`;
-  }).catch(e => status(e.message)).finally(() => { busy = false; controls(); });
+  executeChallenge('Challenge B: Conflicting Patch',
+    'Inject 1.85 Hz sine into right patch green channel',
+    { frequency_hz: 1.85, amplitude: 8.0, target_patch: 'right' },
+    copy => {
+      copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * 1.85 * copy.timestamps[i]))) : v));
+    });
 }
 function runChallengeC() {
-  runChallenge(copy => {
-    const f = 1.2;
-    copy.left = copy.left.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
-    copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
-  }, 'Challenge C: Shared Periodic Light', 'CRITICAL SCIENTIFIC TAKEAWAY: An artificial 1.2 Hz (72 BPM) light fluctuation injected into BOTH patches simultaneously passed heuristic checks! This proves that heuristic agreement across facial patches does not prove biological arterial blood pulsation.');
+  executeChallenge('Challenge C: Shared Periodic Light',
+    'Inject synchronous 1.2 Hz (72 BPM) sine into both patch green channels',
+    { frequency_hz: 1.2, amplitude: 8.0, target_patches: ['left', 'right'] },
+    copy => {
+      const f = 1.2;
+      copy.left = copy.left.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+      copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+    });
 }
 if ($('challengeA')) $('challengeA').onclick = runChallengeA;
 if ($('challengeB')) $('challengeB').onclick = runChallengeB;
@@ -345,7 +459,7 @@ $('explain').onclick=async()=>{
   }catch(e){if(op===operation)$('explanation').textContent=e.message;}
   finally{busy=false;controls();}
 };
-$('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;lastAiExplanation=null;blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';if($('retakeAdvice'))$('retakeAdvice').textContent='No retake needed or no input analyzed yet.';if($('retakeComparison'))$('retakeComparison').textContent='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
+$('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;lastAiExplanation=null;activeChallenge=null;blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';if($('retakeAdvice'))$('retakeAdvice').textContent='No retake needed or no input analyzed yet.';if($('retakeComparison'))$('retakeComparison').textContent='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
 window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();

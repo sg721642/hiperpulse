@@ -162,6 +162,8 @@ async function main() {
   fs.mkdirSync(USER_DATA_DIR, { recursive: true });
   const browserProc = spawn(BROWSER_BIN, [
     '--headless=new',
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${USER_DATA_DIR}`,
     '--use-fake-ui-for-media-stream',

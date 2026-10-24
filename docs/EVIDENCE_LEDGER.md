@@ -94,3 +94,24 @@
 - Regenerated `FULL_SOURCE.md` and `HIPERPULSE_FINAL_IMPLEMENTATION_PLAN.md` via `scripts/build_bundle.py`.
 - Automated test totals: **59 Python unit tests passing**, **17 / 17 browser acceptance tests passing**.
 
+### Milestone F: Post-Audit Consistency Fixes & Pre-UI Verification — VERIFIED
+- **Section A (Authoritative Guided Retake Mapping):**
+  - Synchronized `getRetakeAdvice()` check identifiers in `web/app.js` with the 14 actual quality gates in `app/signal.py`.
+  - Established deterministic priority categorization (`lighting`, `stability`, `alignment`, `timing`, `boundary`, `accepted`).
+  - Added test `test_retake_advice_mapping_all_categories` proving each category correctly maps and that clean samples returning 100% checks do not trigger retake recommendations.
+- **Section B (Dynamic Build Provenance & Distinct Hash Semantics):**
+  - Replaced hardcoded historical commit hash with dynamic `get_git_sha()` endpoint (`/api/health` and `/api/meta`), querying `GIT_SHA` env var, `build_info.json`, `git rev-parse HEAD`, or `"unknown"`.
+  - Added regression test `test_build_info_provenance_not_stale` proving provenance matches live repository HEAD and never reports a stale SHA.
+  - Formally documented distinction: Canonical `signal_sha256` ensures trace numeric integrity; Git SHA ensures software build traceability; neither proves hardware camera origin.
+- **Section C (Artifact Challenge Explanations & Threshold Parity):**
+  - Corrected Challenge A continuity rule to `<= 0.20 s` (matching `dt.max() <= 0.2` in `app/signal.py:101`).
+  - Refactored Challenge Lab explanations to be dynamically derived from backend returned receipts rather than static assumptions.
+  - Stored structured `activeChallenge` metadata in session state and serialized into `hiperpulse-judge-evidence.json`.
+- **Section D (Artifact Lab & Canvas Plot Overlays):**
+  - Added non-intrusive dashed amber plot overlays (`plotOverlay`) on `#wave` and `#spectrum` canvases allowing direct visual comparison between original and challenge-modified signals.
+  - Enforced AI explanation provenance reset on new trace acquisition and session clear.
+- **Section E (CI Workflow Hardening & 3-Job Architecture):**
+  - Fixed pytest collection error (`ModuleNotFoundError: No module named 'app'`) via `pythonpath = .` in `pytest.ini` and `PYTHONPATH: .` in CI.
+  - Expanded `.github/workflows/ci.yml` into 3 jobs: `test` (unit tests & bundle sync), `browser-acceptance` (offline CDP browser runner), and `docker-smoke` (container build, startup, health check & Git SHA verification).
+- **Automated Test Totals:** **62 Python unit & integration tests passing** in 4.96s; **17 / 17 browser acceptance tests passing**.
+

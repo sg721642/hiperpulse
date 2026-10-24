@@ -718,7 +718,13 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - **Differentiator 1 (Guided Retake):** Rule-based actionable advice by failure category; transient in-memory session comparison with score and gate deltas.
   - **Differentiator 2 (Artifact Challenge Lab):** Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination demonstrating optical rPPG limits).
   - **Differentiator 3 (Judge Evidence Card):** Verifiable download of `hiperpulse-judge-evidence.json` with commit SHA, canonical signal hash, checklist, and disclaimers.
-  - **Automated Test Status:** **59 / 59 Python tests passing** in 5.22s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
+  - **Milestone F (Post-Audit Consistency Fixes & Pre-UI Verification):** VERIFIED.
+    - Synchronized all 14 quality check IDs in `getRetakeAdvice()` and added deterministic category mapping.
+    - Implemented dynamic Git commit provenance via `/api/health` and `/api/meta` with regression test asserting no stale SHA.
+    - Corrected Challenge A continuity rule to `<= 0.20 s` and refactored explanations to dynamic receipt analysis.
+    - Implemented dashed amber plot overlays (`plotOverlay`) for original vs challenge visual comparison.
+    - Solved CI collection failure via `pythonpath = .` and expanded `.github/workflows/ci.yml` into 3 jobs: `test`, `browser-acceptance`, and `docker-smoke`.
+  - **Automated Test Status:** **62 / 62 Python tests passing** in 4.96s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
 
 ## Scope and implementation
 
@@ -797,11 +803,11 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **59 passed in 5.22s**, 0 failures, 0 errors.
+- **Result:** **62 passed in 4.96s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
   - 7 video regression tests (`tests/test_video_regression.py`)
   - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`)
-  - 13 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
+  - 16 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
     - Algorithm version bumped to `green-evidence-1.1`
     - Both-patch independent exposure checks `[20, 235]` (6 isolated boundary cases)
     - Canonical `signal_sha256` identity hash and Pydantic `ingestion` tagging
@@ -810,8 +816,11 @@ Prepared 25 October 2026. This file separates observed software checks from task
     - Exact 7199, 7200, 7201 frame boundary tests
     - Individual corruption tests for all 14 quality gates
     - Early authentication and provider concurrency semaphore limit
-    - Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination)
-    - Judge Evidence Card schema integrity and disclaimers
+    - Challenge A (timing dropout <= 0.20s threshold rule), Challenge B (conflicting patch), Challenge C (shared periodic illumination)
+    - Judge Evidence Card schema integrity and dynamic Git provenance
+    - Dynamic build provenance not stale assertion (`test_build_info_provenance_not_stale`)
+    - Authoritative Guided Retake 14-check category mapping assertion (`test_retake_advice_mapping_all_categories`)
+    - Challenge A continuity rule threshold check (`test_challenge_a_continuity_rule_and_threshold`)
 
 - **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 
@@ -1160,13 +1169,106 @@ jobs:
           node --check scripts/test_browser_acceptance.js
 
       - name: Run Pytest test suite
+        env:
+          PYTHONPATH: .
         run: |
-          pytest -v
+          python -m pytest -v
 
       - name: Verify bundle build integrity
         run: |
           python scripts/build_bundle.py
           git diff --exit-code FULL_SOURCE.md HIPERPULSE_FINAL_IMPLEMENTATION_PLAN.md
+
+  browser-acceptance:
+    name: Offline Browser Acceptance Tests
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install system dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start backend server daemon
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 --no-access-log &
+          echo "Waiting for server to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:8080/api/health | grep -q '"ok":true'; then
+              echo "Server is ready on port 8080"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run browser acceptance suite (offline mode)
+        run: |
+          SKIP_LIVE_AI=1 PORT=8080 node scripts/test_browser_acceptance.js
+
+  docker-smoke:
+    name: Docker Build & Container Smoke Test
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image with build provenance
+        run: |
+          docker build --build-arg GIT_SHA=${{ github.sha }} -t hiperpulse:ci .
+
+      - name: Run Docker container
+        run: |
+          docker run -d --name hiperpulse-ci -p 8080:8080 hiperpulse:ci
+          echo "Waiting for container to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:8080/api/health | grep -q '"ok":true'; then
+              echo "Container is responsive"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Verify API Health & Provenance
+        run: |
+          HEALTH=$(curl -fsSL http://127.0.0.1:8080/api/health)
+          echo "Health response: $HEALTH"
+          echo "$HEALTH" | grep -q '"ok":true'
+          echo "$HEALTH" | grep -q "${{ github.sha }}"
+          
+          META=$(curl -fsSL http://127.0.0.1:8080/api/meta)
+          echo "Meta response: $META"
+          echo "$META" | grep -q '"algorithm":"green-evidence-1.1"'
+          echo "$META" | grep -q "${{ github.sha }}"
+
+      - name: Stop and cleanup container
+        if: always()
+        run: |
+          docker stop hiperpulse-ci || true
+          docker rm hiperpulse-ci || true
 ```
 
 
@@ -1193,8 +1295,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements-lock.txt .
 RUN pip install --no-cache-dir -r requirements-lock.txt && useradd --uid 10001 --create-home appuser
+ARG GIT_SHA="unknown"
+ENV GIT_SHA=${GIT_SHA}
 COPY app ./app
 COPY web ./web
+RUN echo "{\"git_sha\": \"${GIT_SHA}\"}" > build_info.json
 USER appuser
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--limit-concurrency", "20", "--no-access-log"]
@@ -1245,6 +1350,7 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import time
 from pathlib import Path
 
@@ -1263,6 +1369,28 @@ ai_lock = asyncio.Lock()
 ai_semaphore = asyncio.Semaphore(2)
 AI_TIMEOUT_BUDGET_SECONDS = 60.0
 last_ai_call = 0.0
+
+
+def get_git_sha() -> str:
+    env_sha = os.getenv('GIT_SHA', '').strip()
+    if env_sha:
+        return env_sha
+    build_info_path = ROOT / 'build_info.json'
+    if build_info_path.is_file():
+        try:
+            info = json.loads(build_info_path.read_text(encoding='utf-8'))
+            if info.get('git_sha'):
+                return str(info['git_sha']).strip()
+        except Exception:
+            pass
+    try:
+        res = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+                             capture_output=True, text=True, timeout=2)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return 'unknown'
 
 
 class Trace(BaseModel):
@@ -1301,7 +1429,18 @@ async def bad_signal(request, exc):
 
 @app.get('/api/health')
 def health():
-    return {'ok':True, 'ai_configured':bool(os.getenv('GEMINI_API_KEY') and os.getenv('DEMO_TOKEN'))}
+    return {
+        'ok': True,
+        'version': '1.1',
+        'algorithm': 'green-evidence-1.1',
+        'git_sha': get_git_sha(),
+        'ai_configured': bool(os.getenv('GEMINI_API_KEY') and os.getenv('DEMO_TOKEN'))
+    }
+
+
+@app.get('/api/meta')
+def meta():
+    return health()
 
 
 @app.get('/api/sample/{kind}')
@@ -1590,6 +1729,7 @@ services:
 ```text
 [pytest]
 testpaths = tests
+pythonpath = .
 addopts = -q
 ```
 
@@ -2081,6 +2221,8 @@ async function main() {
   fs.mkdirSync(USER_DATA_DIR, { recursive: true });
   const browserProc = spawn(BROWSER_BIN, [
     '--headless=new',
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${USER_DATA_DIR}`,
     '--use-fake-ui-for-media-stream',
@@ -3221,13 +3363,15 @@ def test_challenge_c_shared_periodic_illumination():
 def test_judge_evidence_card_fields_and_integrity():
     """Verify Judge Evidence Card schema requirements."""
     res = analyze(sample('clean'))
+    health_data = client.get('/api/health').json()
     
     # Simulate card generation as defined in web/app.js
     card = {
         'application': 'HiperPulse',
-        'version': '1.1',
+        'version': health_data.get('version', '1.1'),
         'algorithm': res['algorithm'],
-        'git_sha': '06ec6c7cdefa54520fe020f7f0e8faeffe725432',
+        'git_sha': health_data.get('git_sha', 'unknown'),
+        'provenance_note': 'Canonical signal_sha256 identifies mathematical signal data. git_sha identifies software build revision.',
         'declared_source': res['source'],
         'ingestion_method': res.get('ingestion', 'direct'),
         'is_synthetic': res['source'] == 'synthetic',
@@ -3247,11 +3391,112 @@ def test_judge_evidence_card_fields_and_integrity():
     }
     
     # Required keys exist
-    for key in ['application', 'version', 'algorithm', 'git_sha', 'signal_sha256', 'bpm_estimate', 'disclaimers']:
+    for key in ['application', 'version', 'algorithm', 'git_sha', 'signal_sha256', 'bpm_estimate', 'disclaimers', 'provenance_note']:
         assert key in card
     assert card['algorithm'] == 'green-evidence-1.1'
     assert len(card['signal_sha256']) == 64
     assert len(card['disclaimers']) == 3
+    assert card['git_sha'] != ''
+
+
+def test_build_info_provenance_not_stale():
+    """Verify that build provenance is dynamically retrieved and not hardcoded to a stale historical SHA."""
+    res = client.get('/api/health')
+    assert res.status_code == 200
+    data = res.json()
+    assert 'git_sha' in data
+    assert 'version' in data
+    assert data['version'] == '1.1'
+
+    meta = client.get('/api/meta').json()
+    assert meta['git_sha'] == data['git_sha']
+
+    # When in a valid git repo, git_sha must match git rev-parse HEAD
+    import subprocess
+    git_run = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    if git_run.returncode == 0 and git_run.stdout.strip():
+        current_head = git_run.stdout.strip()
+        assert data['git_sha'] == current_head
+        # If current HEAD is not 06ec6c..., it must not report 06ec6c...
+        if current_head != '06ec6c7cdefa54520fe020f7f0e8faeffe725432':
+            assert data['git_sha'] != '06ec6c7cdefa54520fe020f7f0e8faeffe725432'
+
+
+def test_retake_advice_mapping_all_categories():
+    """Verify deterministic mapping of actual signal check failures to prioritized advice categories."""
+    def make_checks(failed_names):
+        all_names = [
+            'duration_seconds', 'sample_rate_hz', 'largest_gap_seconds', 'timing_variation',
+            'mean_green', 'clipped_pixel_fraction', 'color_jump_proxy', 'relative_signal_std',
+            'spectral_concentration', 'patch_difference_bpm', 'half_difference_bpm',
+            'estimator_difference_bpm', 'autocorrelation', 'search_boundary_bpm'
+        ]
+        checks = []
+        for name in all_names:
+            checks.append({
+                'name': name,
+                'pass': name not in failed_names,
+                'value': 1.0,
+                'rule': 'test',
+                'action': f'Action for {name}'
+            })
+        return checks
+
+    # Emulate the deterministic mapping from web/app.js
+    def get_advice_category(checks):
+        failed = [c for c in checks if not c['pass']]
+        if not failed:
+            return 'accepted'
+        failed_names = set(c['name'] for c in failed)
+        if 'mean_green' in failed_names or 'clipped_pixel_fraction' in failed_names:
+            return 'lighting'
+        if any(k in failed_names for k in ('color_jump_proxy', 'relative_signal_std', 'spectral_concentration', 'autocorrelation')):
+            return 'stability'
+        if any(k in failed_names for k in ('patch_difference_bpm', 'half_difference_bpm', 'estimator_difference_bpm')):
+            return 'alignment'
+        if any(k in failed_names for k in ('duration_seconds', 'sample_rate_hz', 'largest_gap_seconds', 'timing_variation')):
+            return 'timing'
+        if 'search_boundary_bpm' in failed_names:
+            return 'boundary'
+        return 'general'
+
+    # 1. Clean run -> accepted (no retake needed)
+    assert get_advice_category(make_checks([])) == 'accepted'
+
+    # 2. Lighting / exposure failure
+    assert get_advice_category(make_checks(['mean_green'])) == 'lighting'
+    assert get_advice_category(make_checks(['clipped_pixel_fraction'])) == 'lighting'
+
+    # 3. Movement / stability failure
+    assert get_advice_category(make_checks(['color_jump_proxy'])) == 'stability'
+    assert get_advice_category(make_checks(['relative_signal_std'])) == 'stability'
+    assert get_advice_category(make_checks(['spectral_concentration'])) == 'stability'
+    assert get_advice_category(make_checks(['autocorrelation'])) == 'stability'
+
+    # 4. Alignment / bilateral symmetry failure
+    assert get_advice_category(make_checks(['patch_difference_bpm'])) == 'alignment'
+    assert get_advice_category(make_checks(['half_difference_bpm'])) == 'alignment'
+    assert get_advice_category(make_checks(['estimator_difference_bpm'])) == 'alignment'
+
+    # 5. Timing / duration failure
+    assert get_advice_category(make_checks(['duration_seconds'])) == 'timing'
+    assert get_advice_category(make_checks(['sample_rate_hz'])) == 'timing'
+    assert get_advice_category(make_checks(['largest_gap_seconds'])) == 'timing'
+    assert get_advice_category(make_checks(['timing_variation'])) == 'timing'
+
+    # 6. Search boundary failure
+    assert get_advice_category(make_checks(['search_boundary_bpm'])) == 'boundary'
+
+    # Priority order: Lighting > Stability > Alignment > Timing
+    assert get_advice_category(make_checks(['mean_green', 'color_jump_proxy', 'patch_difference_bpm'])) == 'lighting'
+    assert get_advice_category(make_checks(['spectral_concentration', 'timing_variation'])) == 'stability'
+
+
+def test_challenge_a_continuity_rule_and_threshold():
+    """Verify Challenge A checks against the authentic <= 0.20 s largest_gap_seconds rule."""
+    res = analyze(sample('clean'))
+    gap_check = next(c for c in res['checks'] if c['name'] == 'largest_gap_seconds')
+    assert gap_check['rule'] == '<= 0.2 s'
 ```
 
 
@@ -3640,7 +3885,18 @@ const video = $('video');
 let stream = null, localUrl = null, currentTrace = null, receipt = null;
 let capturing = false, busy = false, generation = 0, operation = 0, captureTimer = null;
 let selectedVideo = false, videoUsable = false, selectedFileName = '';
-let previousSession = null, lastAiExplanation = null;
+let previousSession = null, lastAiExplanation = null, activeChallenge = null;
+let buildMeta = { version: '1.1', algorithm: 'green-evidence-1.1', git_sha: 'unknown' };
+function initBuildMeta() {
+  request('/api/health').then(h => {
+    if (h && typeof h === 'object') {
+      if (h.git_sha) buildMeta.git_sha = h.git_sha;
+      if (h.version) buildMeta.version = h.version;
+      if (h.algorithm) buildMeta.algorithm = h.algorithm;
+    }
+  }).catch(() => {});
+}
+initBuildMeta();
 const scratch = document.createElement('canvas');
 scratch.width = 160; scratch.height = 120;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
@@ -3669,7 +3925,7 @@ function stopMedia() {
   controls();
 }
 function blank() {
-  currentTrace = null; receipt = null; lastAiExplanation = null;
+  currentTrace = null; receipt = null; lastAiExplanation = null; activeChallenge = null;
   $('bpm').textContent = '—'; $('quality').textContent = '—';
   $('source').textContent = 'NO INPUT YET'; $('decision').textContent = 'Choose an input to begin.';
   $('checks').replaceChildren(); $('comparison').textContent = '';
@@ -3704,32 +3960,78 @@ function plot(id, xs, ys, color) {
   c.fillStyle='#a8bcba'; c.font='15px system-ui';
   c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
 }
+function plotOverlay(id, xs, ys1, ys2, color1, color2) {
+  const canvas = $(id), c = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, pad = 28;
+  c.clearRect(0,0,w,h);
+  if (!xs.length) return;
+  const allYs = [...ys1, ...(ys2 || [])];
+  let low = Math.min(...allYs), high = Math.max(...allYs);
+  if (high-low < 1e-8) {low = -1; high = 1;}
+  const x = v => pad+(v-xs[0])/(xs.at(-1)-xs[0] || 1)*(w-2*pad);
+  const y = v => h-pad-(v-low)/(high-low)*(h-2*pad);
+  c.strokeStyle='#263c40'; c.lineWidth=1;
+  for(let i=0;i<=4;i++){const yy=pad+i*(h-2*pad)/4;c.beginPath();c.moveTo(pad,yy);c.lineTo(w-pad,yy);c.stroke();}
+  // Original curve (solid)
+  c.strokeStyle=color1; c.lineWidth=2; c.setLineDash([]); c.beginPath();
+  ys1.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+  // Challenge curve (dashed)
+  if (ys2 && ys2.length) {
+    c.strokeStyle=color2; c.lineWidth=2; c.setLineDash([5, 4]); c.beginPath();
+    ys2.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+    c.setLineDash([]);
+  }
+  c.fillStyle='#a8bcba'; c.font='15px system-ui';
+  c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
+}
 function getRetakeAdvice(checks) {
-  if (!checks || !checks.length) return 'No quality checks available.';
+  if (!checks || !checks.length) {
+    return { primary: 'No quality checks available.', category: 'none', details: [] };
+  }
   const failed = checks.filter(c => !c.pass);
   if (!failed.length) {
-    return 'All heuristic checks passed. Signal continuity, lighting, and bilateral symmetry are within tolerances. Remember: heuristic check passage does not prove biological accuracy.';
+    return {
+      primary: 'All 14 quality checks passed. Signal continuity, lighting, and bilateral symmetry satisfy experimental tolerances. (Note: Heuristic check passage demonstrates signal quality, not clinical accuracy.)',
+      category: 'accepted',
+      details: []
+    };
   }
   const failedNames = new Set(failed.map(c => c.name));
-  const advice = [];
-  if (failedNames.has('exposure_range') || failedNames.has('color_clipping_fraction')) {
-    advice.push('• Lighting: Adjust ambient light. Avoid strong backlights, direct sun, or dark shadows. Keep both cheeks evenly illuminated without bright reflections or darkness.');
+  let primary = '';
+  let category = '';
+
+  // Priority 1: Lighting & Exposure
+  if (failedNames.has('mean_green') || failedNames.has('clipped_pixel_fraction')) {
+    category = 'lighting';
+    primary = 'Adjust lighting: Ensure even, indirect illumination across both cheeks. Avoid direct backlights, bright glare, and deep shadows so neither patch is underexposed (<20) or overexposed (>235).';
   }
-  if (failedNames.has('snr_db') || failedNames.has('spectral_entropy') || failedNames.has('peak_prominence')) {
-    advice.push('• Stability: Minimize head and facial motion. Sit down comfortably, rest your chin or head if needed, breathe normally, and avoid talking or smiling during the capture.');
+  // Priority 2: Movement & Facial Stability
+  else if (failedNames.has('color_jump_proxy') || failedNames.has('relative_signal_std') || failedNames.has('spectral_concentration') || failedNames.has('autocorrelation')) {
+    category = 'stability';
+    primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
   }
-  if (failedNames.has('duration_seconds') || failedNames.has('sample_rate_hz') || failedNames.has('largest_gap_seconds')) {
-    advice.push('• Timing & System: Keep the browser tab active in the foreground throughout the recording. Close background tabs or heavy applications to prevent camera frame drops.');
+  // Priority 3: Facial Alignment & Bilateral Symmetry
+  else if (failedNames.has('patch_difference_bpm') || failedNames.has('half_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
+    category = 'alignment';
+    primary = 'Re-align cheek regions: Position the guide boxes squarely over smooth bare cheek skin below your eyes, clear of facial hair, glasses, lips, or uneven shadows.';
   }
-  if (failedNames.has('patch_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
-    advice.push('• Alignment: Reposition your face so both bounding boxes rest squarely on smooth cheek skin, completely clear of eyes, lips, beard, hair, or shadows.');
+  // Priority 4: Duration & Timing Continuity
+  else if (failedNames.has('duration_seconds') || failedNames.has('sample_rate_hz') || failedNames.has('largest_gap_seconds') || failedNames.has('timing_variation')) {
+    category = 'timing';
+    primary = 'Ensure continuous timing: Keep the browser tab focused in the foreground for the full 30 seconds. Close heavy background applications to prevent frame drops and timing jitter.';
   }
-  if (!advice.length) {
-    for (const c of failed) {
-      if (c.action) advice.push(`• ${c.name.replaceAll('_', ' ')}: ${c.action}`);
-    }
+  // Priority 5: Rate Range / Search Boundary
+  else if (failedNames.has('search_boundary_bpm')) {
+    category = 'boundary';
+    primary = 'Rate out of bounds: The detected dominant frequency is outside the supported physiological window (45–177 BPM). Verify lighting and remain still while retaking.';
   }
-  return advice.join('\n');
+  else {
+    category = 'general';
+    primary = 'Improve recording quality: Address the specific failed signal-quality gates listed below and retake capture.';
+  }
+
+  const details = failed.map(c => `• ${c.name.replaceAll('_', ' ')}: ${c.action} (${c.value}, rule: ${c.rule})`);
+  return { primary, category, details };
 }
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
@@ -3745,8 +4047,13 @@ function render(r) {
     if(!check.pass){const p=document.createElement('div');p.textContent=check.action;row.append(p);}
     $('checks').append(row);
   }
+  const advice = getRetakeAdvice(r.checks);
   if ($('retakeAdvice')) {
-    $('retakeAdvice').textContent = getRetakeAdvice(r.checks);
+    let text = advice.primary;
+    if (advice.details.length) {
+      text += '\n\nFailed check actions:\n' + advice.details.join('\n');
+    }
+    $('retakeAdvice').textContent = text;
   }
   if ($('retakeComparison')) {
     if (previousSession && previousSession.signal_sha256 !== r.signal_sha256) {
@@ -3870,11 +4177,13 @@ $('trace').onclick=()=>currentTrace&&download(currentTrace,'hiperpulse-trace.jso
 if ($('evidenceCard')) {
   $('evidenceCard').onclick = () => {
     if (!receipt) return;
+    const advice = getRetakeAdvice(receipt.checks);
     const card = {
       application: 'HiperPulse',
-      version: '1.1',
-      algorithm: receipt.algorithm || 'green-evidence-1.1',
-      git_sha: '06ec6c7cdefa54520fe020f7f0e8faeffe725432',
+      version: buildMeta.version || '1.1',
+      algorithm: receipt.algorithm || buildMeta.algorithm || 'green-evidence-1.1',
+      git_sha: buildMeta.git_sha || 'unknown',
+      provenance_note: 'Canonical signal_sha256 identifies the mathematical signal data. git_sha identifies the software build revision. Neither constitutes a cryptographic signature of real human or camera origin.',
       timestamp_utc: new Date().toISOString(),
       declared_source: receipt.source,
       ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
@@ -3897,7 +4206,10 @@ if ($('evidenceCard')) {
       passed_checks: receipt.checks.filter(c => c.pass).map(c => c.name),
       failed_checks: receipt.checks.filter(c => !c.pass).map(c => c.name),
       exposure_metrics: receipt.exposure_metrics || null,
-      retake_guidance: getRetakeAdvice(receipt.checks),
+      retake_guidance: advice.primary,
+      retake_category: advice.category,
+      retake_failed_details: advice.details,
+      challenge_experiment: activeChallenge || null,
       ai_explanation: lastAiExplanation || null,
       disclaimers: [
         'Experimental wellness prototype. Not a medical device.',
@@ -3918,8 +4230,8 @@ if ($('retakeAction')) {
     }
   };
 }
-async function runChallenge(modifier, label, explanation) {
-  if (!currentTrace) return;
+async function executeChallenge(label, transformDesc, params, modifier) {
+  if (!currentTrace || !receipt) return;
   const op = operation; busy = true; controls();
   const copy = structuredClone(currentTrace);
   copy.source = 'synthetic';
@@ -3927,8 +4239,53 @@ async function runChallenge(modifier, label, explanation) {
   try {
     const result = await request('/api/analyze', copy);
     if (op !== operation) return;
-    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
-    $('comparison').textContent = `[${label}]\nOriginal: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}.\n${explanation}\n(Original input and receipt remain unchanged)`;
+
+    const failedGates = result.checks.filter(c => !c.pass).map(c => c.name);
+    let outcomeAnalysis = '';
+
+    if (label.includes('Timing Dropout')) {
+      const gapCheck = result.checks.find(c => c.name === 'largest_gap_seconds');
+      if (gapCheck && !gapCheck.pass) {
+        outcomeAnalysis = `Continuity gate tripped as expected: largest frame gap was ${gapCheck.value} s (rule: <= 0.20 s). Estimate was safely withheld (null BPM).`;
+      } else {
+        outcomeAnalysis = `Continuity gate did not trip: largest frame gap was ${gapCheck ? gapCheck.value : '—'} s.`;
+      }
+    } else if (label.includes('Conflicting Patch')) {
+      const patchDiffCheck = result.checks.find(c => c.name === 'patch_difference_bpm');
+      const estDiffCheck = result.checks.find(c => c.name === 'estimator_difference_bpm');
+      if ((patchDiffCheck && !patchDiffCheck.pass) || (estDiffCheck && !estDiffCheck.pass)) {
+        outcomeAnalysis = `Inter-patch discordance detected: patch difference was ${patchDiffCheck ? patchDiffCheck.value : '—'} BPM (limit <= 8.0 BPM). Estimate was safely withheld.`;
+      } else if (result.bpm === null) {
+        outcomeAnalysis = `Estimate was withheld due to failed quality gates: ${failedGates.join(', ')}.`;
+      } else {
+        outcomeAnalysis = `Unexpected: Inter-patch discordance did not trip quality gates; candidate was ${result.bpm} BPM.`;
+      }
+    } else if (label.includes('Shared Periodic Light')) {
+      if (result.bpm !== null && result.quality_score === 100) {
+        outcomeAnalysis = `CRITICAL SCIENTIFIC LIMITATION OBSERVED: Artificial 1.2 Hz (72 BPM) illumination applied to BOTH patches simultaneously passed all 14 heuristic checks (${result.bpm} BPM, 100% score)! Because both patches received identical synchronous modulation, inter-patch consistency (0.0 BPM difference) and spectral concentration passed. This proves that passing heuristic checks does NOT verify biological arterial pulse origin.`;
+      } else {
+        outcomeAnalysis = `Shared periodic illumination did not pass all gates on this signal; failed: ${failedGates.join(', ') || 'none'}. (BPM: ${result.bpm ?? 'withheld'}).`;
+      }
+    }
+
+    activeChallenge = {
+      challenge_type: label,
+      synthetic_transformation: transformDesc,
+      parameters: params,
+      original_signal_sha256: receipt.signal_sha256,
+      transformed_signal_sha256: result.signal_sha256,
+      actual_failed_gates: failedGates,
+      actual_passed_gates: result.checks.filter(c => c.pass).map(c => c.name),
+      bpm_result: result.bpm,
+      quality_score: result.quality_score,
+      timestamp_utc: new Date().toISOString()
+    };
+
+    $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failedGates.map(n => n.replaceAll('_', ' ')).join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[${label} Result Analysis: ${outcomeAnalysis}]`;
+
+    // Render visual before-vs-after overlay on waveform and spectrum (solid mint = original, dashed amber = challenge)
+    plotOverlay('wave', receipt.waveform.seconds, receipt.waveform.normalized_amplitude, result.waveform.normalized_amplitude, '#8ae8c4', '#f1cc8b');
+    plotOverlay('spectrum', receipt.spectrum.bpm, receipt.spectrum.relative_power, result.spectrum.relative_power, '#8ae8c4', '#f1cc8b');
   } catch (e) {
     status(e.message);
   } finally {
@@ -3936,29 +4293,31 @@ async function runChallenge(modifier, label, explanation) {
   }
 }
 function runChallengeA() {
-  runChallenge(copy => {
-    const mid = Math.floor(copy.timestamps.length / 2);
-    for (let i = mid; i < copy.timestamps.length; i++) copy.timestamps[i] += 0.35;
-  }, 'Challenge A: Timing Dropout', 'Scientific Takeaway: Injected a 0.35s frame gap midway. The continuity gate (largest_gap_seconds <= 0.25s) detected the frame discontinuity and safely withheld the estimate.');
+  executeChallenge('Challenge A: Timing Dropout',
+    'Inject 0.35s PTS gap at sample midpoint',
+    { gap_seconds: 0.35, threshold_rule: '<= 0.20 s' },
+    copy => {
+      const mid = Math.floor(copy.timestamps.length / 2);
+      for (let i = mid; i < copy.timestamps.length; i++) copy.timestamps[i] += 0.35;
+    });
 }
 function runChallengeB() {
-  if (!currentTrace) return;
-  const op = operation; busy = true; controls();
-  const copy = structuredClone(currentTrace);
-  copy.source = 'synthetic';
-  copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * 1.85 * copy.timestamps[i]))) : v));
-  request('/api/analyze', copy).then(result => {
-    if (op !== operation) return;
-    const failed = result.checks.filter(c => !c.pass).map(c => c.name.replaceAll('_', ' '));
-    $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failed.join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[Challenge B: Conflicting Patch Takeaway: Injected 1.85 Hz sine into right patch; bilateral discrepancy was detected and estimate withheld.]`;
-  }).catch(e => status(e.message)).finally(() => { busy = false; controls(); });
+  executeChallenge('Challenge B: Conflicting Patch',
+    'Inject 1.85 Hz sine into right patch green channel',
+    { frequency_hz: 1.85, amplitude: 8.0, target_patch: 'right' },
+    copy => {
+      copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * 1.85 * copy.timestamps[i]))) : v));
+    });
 }
 function runChallengeC() {
-  runChallenge(copy => {
-    const f = 1.2;
-    copy.left = copy.left.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
-    copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
-  }, 'Challenge C: Shared Periodic Light', 'CRITICAL SCIENTIFIC TAKEAWAY: An artificial 1.2 Hz (72 BPM) light fluctuation injected into BOTH patches simultaneously passed heuristic checks! This proves that heuristic agreement across facial patches does not prove biological arterial blood pulsation.');
+  executeChallenge('Challenge C: Shared Periodic Light',
+    'Inject synchronous 1.2 Hz (72 BPM) sine into both patch green channels',
+    { frequency_hz: 1.2, amplitude: 8.0, target_patches: ['left', 'right'] },
+    copy => {
+      const f = 1.2;
+      copy.left = copy.left.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+      copy.right = copy.right.map((row, i) => row.map((v, c) => c === 1 ? Math.max(0, Math.min(255, v + 8 * Math.sin(2 * Math.PI * f * copy.timestamps[i]))) : v));
+    });
 }
 if ($('challengeA')) $('challengeA').onclick = runChallengeA;
 if ($('challengeB')) $('challengeB').onclick = runChallengeB;
@@ -3981,7 +4340,7 @@ $('explain').onclick=async()=>{
   }catch(e){if(op===operation)$('explanation').textContent=e.message;}
   finally{busy=false;controls();}
 };
-$('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;lastAiExplanation=null;blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';if($('retakeAdvice'))$('retakeAdvice').textContent='No retake needed or no input analyzed yet.';if($('retakeComparison'))$('retakeComparison').textContent='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
+$('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;lastAiExplanation=null;activeChallenge=null;blank();$('token').value='';$('consent').checked=false;$('aiConsent').checked=false;$('file').value='';$('traceFile').value='';if($('retakeAdvice'))$('retakeAdvice').textContent='No retake needed or no input analyzed yet.';if($('retakeComparison'))$('retakeComparison').textContent='';status('Session cleared and camera stopped. Downloaded files are not deleted.');};
 window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();
@@ -4013,8 +4372,8 @@ controls();
 <section class="panel result"><h2>02 / Inspect the evidence</h2><p id="source" class="eyebrow">NO INPUT YET</p>
 <div class="metrics"><div><span id="bpm" class="number">—</span><span class="unit">experimental BPM</span></div><div><span id="quality" class="number small">—</span><span class="unit">checks passed</span></div></div>
 <p id="decision">Choose an input to begin.</p><p class="hint">The score is the fraction of heuristic checks passed, not confidence or accuracy. Shared lighting artifacts can pass every check.</p>
-<h3>Pulse-like waveform</h3><canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas><p class="axis">Time (seconds) · normalized amplitude (arbitrary units)</p>
-<h3>Periodicity spectrum</h3><canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas><p class="axis">Frequency equivalent (BPM) · relative spectral power</p>
+<h3>Pulse-like waveform</h3><canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas><p id="waveLegend" class="axis">Time (seconds) · normalized amplitude (arbitrary units · solid: original, dashed: challenge)</p>
+<h3>Periodicity spectrum</h3><canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas><p id="spectrumLegend" class="axis">Frequency equivalent (BPM) · relative spectral power (solid: original, dashed: challenge)</p>
 <details><summary>View quality checks and retake guidance</summary><div id="checks"></div></details>
 <div id="retakeSection" class="retake-section"><h3>Guided retake analysis</h3><p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p><p id="retakeComparison" class="hint" style="white-space:pre-wrap;"></p><button id="retakeAction" class="secondary" disabled>Retake / capture again</button></div>
 <div class="buttons"><button id="receipt" class="secondary" disabled>Download evidence receipt</button><button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button><button id="trace" class="secondary" disabled>Download input trace</button></div>

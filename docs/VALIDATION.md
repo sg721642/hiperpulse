@@ -7,11 +7,11 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **59 passed in 5.22s**, 0 failures, 0 errors.
+- **Result:** **62 passed in 4.96s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
   - 7 video regression tests (`tests/test_video_regression.py`)
   - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`)
-  - 13 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
+  - 16 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
     - Algorithm version bumped to `green-evidence-1.1`
     - Both-patch independent exposure checks `[20, 235]` (6 isolated boundary cases)
     - Canonical `signal_sha256` identity hash and Pydantic `ingestion` tagging
@@ -20,8 +20,11 @@ Prepared 25 October 2026. This file separates observed software checks from task
     - Exact 7199, 7200, 7201 frame boundary tests
     - Individual corruption tests for all 14 quality gates
     - Early authentication and provider concurrency semaphore limit
-    - Challenge A (timing dropout), Challenge B (conflicting patch), Challenge C (shared periodic illumination)
-    - Judge Evidence Card schema integrity and disclaimers
+    - Challenge A (timing dropout <= 0.20s threshold rule), Challenge B (conflicting patch), Challenge C (shared periodic illumination)
+    - Judge Evidence Card schema integrity and dynamic Git provenance
+    - Dynamic build provenance not stale assertion (`test_build_info_provenance_not_stale`)
+    - Authoritative Guided Retake 14-check category mapping assertion (`test_retake_advice_mapping_all_categories`)
+    - Challenge A continuity rule threshold check (`test_challenge_a_continuity_rule_and_threshold`)
 
 - **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 

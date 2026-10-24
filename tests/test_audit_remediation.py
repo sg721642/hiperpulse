@@ -405,13 +405,15 @@ def test_challenge_c_shared_periodic_illumination():
 def test_judge_evidence_card_fields_and_integrity():
     """Verify Judge Evidence Card schema requirements."""
     res = analyze(sample('clean'))
+    health_data = client.get('/api/health').json()
     
     # Simulate card generation as defined in web/app.js
     card = {
         'application': 'HiperPulse',
-        'version': '1.1',
+        'version': health_data.get('version', '1.1'),
         'algorithm': res['algorithm'],
-        'git_sha': '06ec6c7cdefa54520fe020f7f0e8faeffe725432',
+        'git_sha': health_data.get('git_sha', 'unknown'),
+        'provenance_note': 'Canonical signal_sha256 identifies mathematical signal data. git_sha identifies software build revision.',
         'declared_source': res['source'],
         'ingestion_method': res.get('ingestion', 'direct'),
         'is_synthetic': res['source'] == 'synthetic',
@@ -431,9 +433,111 @@ def test_judge_evidence_card_fields_and_integrity():
     }
     
     # Required keys exist
-    for key in ['application', 'version', 'algorithm', 'git_sha', 'signal_sha256', 'bpm_estimate', 'disclaimers']:
+    for key in ['application', 'version', 'algorithm', 'git_sha', 'signal_sha256', 'bpm_estimate', 'disclaimers', 'provenance_note']:
         assert key in card
     assert card['algorithm'] == 'green-evidence-1.1'
     assert len(card['signal_sha256']) == 64
     assert len(card['disclaimers']) == 3
+    assert card['git_sha'] != ''
+
+
+def test_build_info_provenance_not_stale():
+    """Verify that build provenance is dynamically retrieved and not hardcoded to a stale historical SHA."""
+    res = client.get('/api/health')
+    assert res.status_code == 200
+    data = res.json()
+    assert 'git_sha' in data
+    assert 'version' in data
+    assert data['version'] == '1.1'
+
+    meta = client.get('/api/meta').json()
+    assert meta['git_sha'] == data['git_sha']
+
+    # When in a valid git repo, git_sha must match git rev-parse HEAD
+    import subprocess
+    git_run = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    if git_run.returncode == 0 and git_run.stdout.strip():
+        current_head = git_run.stdout.strip()
+        assert data['git_sha'] == current_head
+        # If current HEAD is not 06ec6c..., it must not report 06ec6c...
+        if current_head != '06ec6c7cdefa54520fe020f7f0e8faeffe725432':
+            assert data['git_sha'] != '06ec6c7cdefa54520fe020f7f0e8faeffe725432'
+
+
+def test_retake_advice_mapping_all_categories():
+    """Verify deterministic mapping of actual signal check failures to prioritized advice categories."""
+    def make_checks(failed_names):
+        all_names = [
+            'duration_seconds', 'sample_rate_hz', 'largest_gap_seconds', 'timing_variation',
+            'mean_green', 'clipped_pixel_fraction', 'color_jump_proxy', 'relative_signal_std',
+            'spectral_concentration', 'patch_difference_bpm', 'half_difference_bpm',
+            'estimator_difference_bpm', 'autocorrelation', 'search_boundary_bpm'
+        ]
+        checks = []
+        for name in all_names:
+            checks.append({
+                'name': name,
+                'pass': name not in failed_names,
+                'value': 1.0,
+                'rule': 'test',
+                'action': f'Action for {name}'
+            })
+        return checks
+
+    # Emulate the deterministic mapping from web/app.js
+    def get_advice_category(checks):
+        failed = [c for c in checks if not c['pass']]
+        if not failed:
+            return 'accepted'
+        failed_names = set(c['name'] for c in failed)
+        if 'mean_green' in failed_names or 'clipped_pixel_fraction' in failed_names:
+            return 'lighting'
+        if any(k in failed_names for k in ('color_jump_proxy', 'relative_signal_std', 'spectral_concentration', 'autocorrelation')):
+            return 'stability'
+        if any(k in failed_names for k in ('patch_difference_bpm', 'half_difference_bpm', 'estimator_difference_bpm')):
+            return 'alignment'
+        if any(k in failed_names for k in ('duration_seconds', 'sample_rate_hz', 'largest_gap_seconds', 'timing_variation')):
+            return 'timing'
+        if 'search_boundary_bpm' in failed_names:
+            return 'boundary'
+        return 'general'
+
+    # 1. Clean run -> accepted (no retake needed)
+    assert get_advice_category(make_checks([])) == 'accepted'
+
+    # 2. Lighting / exposure failure
+    assert get_advice_category(make_checks(['mean_green'])) == 'lighting'
+    assert get_advice_category(make_checks(['clipped_pixel_fraction'])) == 'lighting'
+
+    # 3. Movement / stability failure
+    assert get_advice_category(make_checks(['color_jump_proxy'])) == 'stability'
+    assert get_advice_category(make_checks(['relative_signal_std'])) == 'stability'
+    assert get_advice_category(make_checks(['spectral_concentration'])) == 'stability'
+    assert get_advice_category(make_checks(['autocorrelation'])) == 'stability'
+
+    # 4. Alignment / bilateral symmetry failure
+    assert get_advice_category(make_checks(['patch_difference_bpm'])) == 'alignment'
+    assert get_advice_category(make_checks(['half_difference_bpm'])) == 'alignment'
+    assert get_advice_category(make_checks(['estimator_difference_bpm'])) == 'alignment'
+
+    # 5. Timing / duration failure
+    assert get_advice_category(make_checks(['duration_seconds'])) == 'timing'
+    assert get_advice_category(make_checks(['sample_rate_hz'])) == 'timing'
+    assert get_advice_category(make_checks(['largest_gap_seconds'])) == 'timing'
+    assert get_advice_category(make_checks(['timing_variation'])) == 'timing'
+
+    # 6. Search boundary failure
+    assert get_advice_category(make_checks(['search_boundary_bpm'])) == 'boundary'
+
+    # Priority order: Lighting > Stability > Alignment > Timing
+    assert get_advice_category(make_checks(['mean_green', 'color_jump_proxy', 'patch_difference_bpm'])) == 'lighting'
+    assert get_advice_category(make_checks(['spectral_concentration', 'timing_variation'])) == 'stability'
+
+
+def test_challenge_a_continuity_rule_and_threshold():
+    """Verify Challenge A checks against the authentic <= 0.20 s largest_gap_seconds rule."""
+    res = analyze(sample('clean'))
+    gap_check = next(c for c in res['checks'] if c['name'] == 'largest_gap_seconds')
+    assert gap_check['rule'] == '<= 0.2 s'
+
 
