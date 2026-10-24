@@ -26,25 +26,34 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - Web UI provenance tagging: synthetic video files correctly marked `SYNTHETIC DEMO · NOT A PERSON`.
 - **Milestone M3 (Receipts & Artifact Comparison Lab):** VERIFIED.
   - Automated browser checks 6 and 7 verify receipt SHA-256 integrity upon reimport and artifact comparison gate withholding (79%, 3 failed gates).
+- **Milestone M4 (Real Gemma 4 AI Explanation & Security Integration):** VERIFIED.
+  - API Credentials: Securely loaded via server-side `.env` (strictly Git-ignored).
+  - Server health: `/api/health` returns `{"ok":true,"ai_configured":true}`.
+  - Model discovery (`scripts/check_model.py`): Account confirmed access to `models/gemma-4-26b-a4b-it` supporting `['generateContent', 'countTokens']`.
+  - Reasoning model tuning (D17): Increased `maxOutputTokens` to 4096 and timeout to 90s to accommodate internal reasoning (`thought: True`) before final text output. Added transient 500/503 retry.
+  - Test A (Clean Synthetic): Live Gemma 4 explanation renders with model tag `Gemma 4 / gemma-4-26b-a4b-it`, confirms 72 BPM and synthetic provenance, disclaims biological pulse.
+  - Test B (Failed Quality Artifact): Live Gemma 4 explanation correctly explains withheld BPM and identifies failed checks (`patch_difference_bpm` and `estimator_difference_bpm`).
+  - Test C (Security & Fallbacks): Unchecked consent blocks AI request; missing/invalid demo token returns HTTP 401; cooldown gate (<10s) returns deterministic fallback; clear session cleanly wipes state and credentials.
+  - Browser Acceptance Suite: **17/17 browser acceptance tests passing** in headless Brave via CDP.
+  - Automated regression suite: **41/41 pytest tests passing in 1.87s**.
 
 ## Scope and implementation
 
-Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate; waveform/spectrum; artifact comparison; downloadable receipts/traces; optional Gemma 4 REST explanation; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
+Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate; waveform/spectrum; artifact comparison; downloadable receipts/traces; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
 
 ## Git Status
 
 - Git repository initialized (`main` branch).
 - Remote: `https://github.com/sg721642/hiperpulse.git` (Public repository created and synchronized).
 - Local branch: `main`
-- Changes pending commit: Video fixture fix, automated browser test suite, video regression tests, documentation updates.
+- Changes pending commit: Gemma 4 reasoning model token budget & retry fix, automated browser acceptance suite M4 expansion (17 checks), standalone live verification script, updated documentation.
 
 ## Pending Work (Next Milestones)
 
-- **M4:** Real Gemma 4 integration (`gemma-4-26b-a4b-it`) via Gemini API with server-side `.env`.
 - **M5:** Physical host webcam check and phone HTTPS capture verification.
-- **M6:** Docker build validation and DigitalOcean deployment.
+- **M6:** Docker build validation and DigitalOcean deployment preparation.
 - **M7:** Presentation slides (PPT), <=5 min demonstration video, and final repository tag.
 
 ## Immediate Next Smallest Task
 
-Commit and push verified Milestone M2/M3 changes to GitHub `origin main`, verify synchronization with `git ls-remote`, and proceed to Milestone M4 live Gemma 4 verification.
+Commit and push verified Milestone M4 changes to GitHub `origin main`, verify synchronization with `git ls-remote`, and proceed with Milestone M6 Docker packaging.

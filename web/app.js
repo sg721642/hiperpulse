@@ -38,9 +38,10 @@ function blank() {
   controls();
 }
 async function request(path, data, headers = {}) {
+  const timeoutMs = path === '/api/explain' ? 95000 : 30000;
   const response = await fetch(path, {method:data ? 'POST':'GET',
     headers:{'Content-Type':'application/json',...headers},
-    body:data ? JSON.stringify(data):undefined, signal:AbortSignal.timeout(30000)});
+    body:data ? JSON.stringify(data):undefined, signal:AbortSignal.timeout(timeoutMs)});
   const body = await response.json();
   if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Invalid input. Check the trace format and sample lengths.');
   return body;

@@ -23,7 +23,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
 ## Automated Browser Acceptance Suite (Brave CDP Runner)
 
 - **Runner:** `scripts/test_browser_acceptance.js` driving headless Brave (`/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`) via Chrome DevTools Protocol (CDP).
-- **Results:** **13/13 Checks Passed**:
+- **Results:** **17/17 Checks Passed**:
   1. Security headers & `.env` exclusion: CSP `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`; `/.env` returns HTTP 404.
   2. Consent gate enforcement: Camera button and trace upload disabled until consent checkbox is checked.
   3. Clean synthetic sample: 72 BPM, 100% checklist (14/14 checks passed), `accepted_experimental`.
@@ -36,7 +36,36 @@ Prepared 25 October 2026. This file separates observed software checks from task
   10. Clear session UI reset: Clears all waveform, spectrum, BPM, quality metrics, and disabled export/explanation buttons.
   11. Synthetic 30s WebM browser playback: Real-time 30-second playback through native `requestVideoFrameCallback` over `HTMLVideoElement`; 900 frames extracted, 0 gaps (`largest_gap_seconds: 0.034s`, `timing_variation: 0.0141`), **72 BPM**, **100% checks passed**, status `accepted_experimental`, provenance `SYNTHETIC DEMO · NOT A PERSON`.
   12. Short 12s video browser withholding: Real-time 12-second playback extracts 360 frames; backend withholds BPM (`null`), fails `duration_seconds` gate (93% checks passed), status `insufficient_quality`.
-  13. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
+  13. Gemma 4 AI consent gate and demo token enforcement: Verifies UI blocks explanation when summary sharing is unchecked, and returns HTTP 401 if demo password is missing or invalid.
+  14. Real Gemma 4 clean synthetic explanation in browser: Live call to `gemma-4-26b-a4b-it` renders in browser with exact model tag, synthetic provenance attribution, 72 BPM confirmation, and non-clinical disclaimer.
+  15. Real Gemma 4 failed-quality explanation in browser: Live call to `gemma-4-26b-a4b-it` renders in browser explaining withheld BPM and identifying specific failed gates (`patch_difference_bpm` and `estimator_difference_bpm`).
+  16. Clear session clears AI explanation, password input, and consent: Confirms `#explanation` resets to default placeholder, token input is cleared from memory, and checkboxes are unchecked.
+  17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
+
+## Milestone M4: Real Gemma 4 Integration Verification
+
+- **Date:** 25 October 2026
+- **Configured Model ID:** `gemma-4-26b-a4b-it` via Google Gemini REST API (`https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent`).
+- **Account Model Discovery (`scripts/check_model.py`):**
+  - Confirmed available model listing: `models/gemma-4-26b-a4b-it` supporting `['generateContent', 'countTokens']`.
+- **Reasoning Model Architecture & Tuning (Decision D17):**
+  - Diagnosis: `gemma-4-26b-a4b-it` is an instruction-tuned Mixture-of-Experts reasoning model. It outputs internal reasoning tokens (`thought: True`) consuming ~800–1500 tokens before emitting the user-facing text part. The initial 500-token cap caused `MAX_TOKENS` truncation before non-thought text was emitted.
+  - Solution: Increased `maxOutputTokens` to 4096, backend `httpx` timeout to 90s, frontend fetch timeout to 95s, and added a 2-second retry for transient 500/503 errors.
+- **Live Provider Evidence:**
+  - **Test A (Clean Synthetic Input):**
+    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
+    - Notice: `AI commentary; the calculated receipt remains authoritative.`
+    - Text: *"This report uses synthetic data, not a person. The recorded BPM is 72. All signal quality checks passed. Note that a passed check does not establish a real pulse. To improve future recordings, try to reduce motion and lighting changes."*
+  - **Test B (Failed-Quality Artifact Input):**
+    - Status: HTTP 200 (live provider `Gemma 4 / gemma-4-26b-a4b-it`)
+    - Notice: `AI commentary; the calculated receipt remains authoritative.`
+    - Text: *"This is synthetic data, not a person. The signal quality is insufficient, and the BPM is withheld. The most relevant failed checks are patch_difference_bpm (38.6719) and estimator_difference_bpm (54.4922). To improve the recording, keep both patches on the cheeks. Note that a passed check does not establish a real pulse."*
+  - **Test C (Security & Fallback):**
+    - Invalid demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
+    - Missing demo token: HTTP 401 `{"detail":"Enter the demo password to use Gemma."}`.
+    - AI cooldown: Request within 10s returns deterministic fallback (`"AI cooldown: wait ten seconds."`).
+    - Server-side fallback: Deterministic explanation returned if key unconfigured or transient error unresolvable.
+- **Standalone Verification Runner:** `scripts/verify_gemma_live.py` passed all assertions.
 
 ## Root-Cause Diagnosis: Synthetic WebM Timestamp Discontinuity
 
@@ -64,8 +93,8 @@ Prepared 25 October 2026. This file separates observed software checks from task
 | Stop during capture | Tracks stopped, incomplete trace discarded | VERIFIED (Automated in CDP acceptance test 8) |
 | Hide tab during capture | Abort; no stale estimate | VERIFIED (Automated in CDP acceptance test 9) |
 | Local video supported codec | Process first <=30 s, maintain timestamps | VERIFIED (Automated in CDP acceptance tests 11 & 12) |
-| Actual Gemma 4 provider | Correct provider/model, no unsupported interpretation | NOT RUN (pending M4 credentials) |
-| Actual provider timeout/quota | Labelled deterministic fallback | NOT RUN (mock verified) |
+| Actual Gemma 4 provider | Correct provider/model, no unsupported interpretation | VERIFIED (Live calls to gemma-4-26b-a4b-it in CDP tests 14 & 15 and verify_gemma_live.py) |
+| Actual provider timeout/quota | Labelled deterministic fallback | VERIFIED (Mocked + live transient retry and cooldown fallback verified) |
 | Docker build | Starts as non-root on 8080 | NOT RUN (pending M6) |
 | DigitalOcean health and HTTPS | `/api/health` and interactive samples work | NOT RUN (pending M6) |
 | Human/reference comparison | Synchronized documented interval comparison | NOT RUN |

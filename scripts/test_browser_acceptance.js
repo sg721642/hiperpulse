@@ -474,8 +474,133 @@ async function main() {
       console.log(`✗ Short 12s video timed out: "${statusText}"`);
     }
 
-    // TEST 13: Console Errors & Exceptions Audit
-    console.log('\n--- Test 13: Console Errors & Unhandled Exceptions ---');
+    // Read DEMO_TOKEN from .env if configured
+    let demoToken = null;
+    const envPath = path.resolve(ROOT, '.env');
+    if (fs.existsSync(envPath)) {
+      const match = fs.readFileSync(envPath, 'utf8').match(/^DEMO_TOKEN=(.*)$/m);
+      if (match) demoToken = match[1].trim();
+    }
+
+    if (demoToken) {
+      // TEST 13: Gemma 4 AI Consent Gate & Demo Password Enforcement
+      console.log('\n--- Test 13: Gemma 4 AI Consent & Demo Token Gate ---');
+      await client.eval(`$('clean').click()`);
+      for (let i = 0; i < 40; i++) {
+        await sleep(100);
+        if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
+      }
+      
+      // Step A: Attempt explain without aiConsent
+      await client.eval(`$('aiConsent').checked = false; $('explain').click();`);
+      let explainText = await client.eval(`$('explanation').textContent`);
+      const consentBlocked = explainText.includes('Review and accept the summary-sharing option first');
+      console.log(`  Unchecked consent check: "${explainText}"`);
+
+      // Step B: Attempt explain with invalid token
+      await client.eval(`$('aiConsent').checked = true; $('token').value = 'wrong-token'; $('explain').click();`);
+      for (let i = 0; i < 40; i++) {
+        await sleep(100);
+        explainText = await client.eval(`$('explanation').textContent`);
+        if (explainText.includes('Enter the demo password')) break;
+      }
+      const tokenBlocked = explainText.includes('Enter the demo password');
+      console.log(`  Invalid token check: "${explainText}"`);
+
+      if (consentBlocked && tokenBlocked) {
+        results.push({ name: 'Gemma 4 AI consent gate and demo token enforcement', pass: true });
+        console.log('✓ AI consent and demo token gates enforced in browser UI');
+      } else {
+        results.push({ name: 'Gemma 4 AI consent gate and demo token enforcement', pass: false });
+        console.log('✗ AI gates failed enforcement');
+      }
+
+      // TEST 14: Real Gemma 4 Clean Synthetic Explanation
+      console.log('\n--- Test 14: Real Gemma 4 Explanation for Clean Synthetic Sample ---');
+      await client.eval(`$('token').value = ${JSON.stringify(demoToken)}; $('explain').click();`);
+      let liveCleanDone = false;
+      for (let s = 0; s < 90; s++) {
+        await sleep(1000);
+        explainText = await client.eval(`$('explanation').textContent`);
+        if (!explainText.includes('Preparing explanation…') && (explainText.startsWith('Gemma 4') || explainText.startsWith('deterministic'))) {
+          liveCleanDone = true;
+          break;
+        }
+        process.stdout.write(`  Waiting for Gemma 4 provider response (${s}s)...\r`);
+      }
+      console.log('\n  Live explanation:\n' + explainText.split('\n').map(l => '    ' + l).join('\n'));
+
+      const cleanHasModel = explainText.includes('Gemma 4 / gemma-4-26b-a4b-it');
+      const cleanHasSynthetic = /synthetic/i.test(explainText);
+      const cleanHas72 = explainText.includes('72');
+      const cleanHasNotice = explainText.includes('calculated receipt remains authoritative') || explainText.includes('AI commentary');
+
+      if (liveCleanDone && cleanHasModel && cleanHasSynthetic && cleanHas72 && cleanHasNotice) {
+        results.push({ name: 'Real Gemma 4 clean synthetic explanation in browser', pass: true });
+        console.log('✓ Real Gemma 4 provider response rendered with model tag, synthetic attribution, and 72 BPM');
+      } else {
+        results.push({ name: 'Real Gemma 4 clean synthetic explanation in browser', pass: false });
+        console.log(`✗ Clean explanation failed criteria: model=${cleanHasModel}, synthetic=${cleanHasSynthetic}, 72=${cleanHas72}`);
+      }
+
+      // Cooldown wait before next AI call
+      console.log('  Waiting 15s server AI cooldown...');
+      await sleep(15000);
+
+      // TEST 15: Real Gemma 4 Failed-Quality (Artifact) Explanation
+      console.log('\n--- Test 15: Real Gemma 4 Explanation for Failed-Quality Artifact Sample ---');
+      await client.eval(`$('artifact').click()`);
+      for (let i = 0; i < 40; i++) {
+        await sleep(100);
+        if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
+      }
+
+      await client.eval(`$('aiConsent').checked = true; $('token').value = ${JSON.stringify(demoToken)}; $('explain').click();`);
+      let liveArtifactDone = false;
+      for (let s = 0; s < 90; s++) {
+        await sleep(1000);
+        explainText = await client.eval(`$('explanation').textContent`);
+        if (!explainText.includes('Preparing explanation…') && (explainText.startsWith('Gemma 4') || explainText.startsWith('deterministic'))) {
+          liveArtifactDone = true;
+          break;
+        }
+        process.stdout.write(`  Waiting for Gemma 4 provider response (${s}s)...\r`);
+      }
+      console.log('\n  Live artifact explanation:\n' + explainText.split('\n').map(l => '    ' + l).join('\n'));
+
+      const artHasModel = explainText.includes('Gemma 4 / gemma-4-26b-a4b-it');
+      const artHasWithheld = /withheld/i.test(explainText);
+      const artHasChecks = explainText.toLowerCase().includes('patch') || explainText.toLowerCase().includes('check') || explainText.toLowerCase().includes('failed');
+
+      if (liveArtifactDone && artHasModel && artHasWithheld && artHasChecks) {
+        results.push({ name: 'Real Gemma 4 failed-quality explanation in browser', pass: true });
+        console.log('✓ Real Gemma 4 provider response correctly explains withheld BPM and failed quality checks');
+      } else {
+        results.push({ name: 'Real Gemma 4 failed-quality explanation in browser', pass: false });
+        console.log(`✗ Artifact explanation failed criteria: model=${artHasModel}, withheld=${artHasWithheld}, checks=${artHasChecks}`);
+      }
+
+      // TEST 16: Clear Session Cleans Explanation and Secrets
+      console.log('\n--- Test 16: Clear Session Clears Explanation & Token ---');
+      await client.eval(`$('clear').click()`);
+      const clearedAi = await client.eval(`({
+        explanation: $('explanation').textContent,
+        token: $('token').value,
+        aiConsent: $('aiConsent').checked
+      })`);
+      if (clearedAi.explanation === 'The signal calculation works without an AI key.' && clearedAi.token === '' && !clearedAi.aiConsent) {
+        results.push({ name: 'Clear session resets explanation, token, and consent', pass: true });
+        console.log('✓ Clear session cleanly wiped AI explanation, token input, and sharing consent');
+      } else {
+        results.push({ name: 'Clear session resets explanation, token, and consent', pass: false });
+        console.log('✗ Clear session failed to reset AI fields:', clearedAi);
+      }
+    } else {
+      console.log('\n[SKIP] Gemma 4 live tests skipped (no DEMO_TOKEN in .env)');
+    }
+
+    // TEST 17: Console Errors & Exceptions Audit
+    console.log('\n--- Test 17: Console Errors & Unhandled Exceptions ---');
     console.log(`  Total console logs: ${client.consoleLogs.length}`);
     console.log(`  Total uncaught page errors: ${client.pageErrors.length}`);
     if (client.pageErrors.length === 0) {
