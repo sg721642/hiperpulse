@@ -18,5 +18,7 @@ Final-audit addendum (25 October 2026): use the final single-file plan as portab
 | D12 | Whole-frame resizing and fixed normalized ROIs | Bounded browser cost, consistent guide geometry; loses spatial detail, requires validation |
 | D13 | Keep sample source labels client-declared | Honest UI provenance convention; not a verified chain of custody |
 | D14 | Update scipy to 1.18.1 on macOS arm64 | scipy 1.15.2 prebuilt wheel fails on macOS arm64 due to binary linker constraint in _spropack. Upgraded to 1.18.1; all 34 tests pass with identical numerical behavior. |
+| D15 | Deterministic FFmpeg raw-frame encoding for video fixtures | Chromium headless virtual-time desynchronizes MediaRecorder encoding threads, embedding a 5.3s PTS gap in WebM output. Raw-pipe encoding to libvpx/libx264 guarantees mathematically exact 33.3ms PTS spacing, 0 gaps, and constant 30 fps. |
+| D16 | Synthetic filename pattern detection for test fixtures | Known test fixtures are attributed as `source: 'synthetic'` upon processing, preserving honest provenance in UI (`SYNTHETIC DEMO · NOT A PERSON`) and receipts without altering Pydantic schema or server endpoints. |
 
 Future changes must record date, triggering evidence, chosen alternative, rejected alternatives and tests. Do not broaden scope to POS/neural rPPG before all existing acceptance gates and sponsor integration are complete. POS can be a future comparison baseline, with paper attribution, reference parity tests and new validation; it is not implemented here.

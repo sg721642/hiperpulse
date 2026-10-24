@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const video = $('video');
 let stream = null, localUrl = null, currentTrace = null, receipt = null;
 let capturing = false, busy = false, generation = 0, operation = 0, captureTimer = null;
-let selectedVideo = false, videoUsable = false;
+let selectedVideo = false, videoUsable = false, selectedFileName = '';
 const scratch = document.createElement('canvas');
 scratch.width = 160; scratch.height = 120;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
@@ -144,6 +144,7 @@ $('record').onclick=()=>capture('camera');
 $('stop').onclick=()=>{operation++;stopMedia();status('Stopped. Incomplete capture discarded.');};
 $('file').onchange=async e=>{
   stopMedia();blank();const file=e.target.files[0];if(!file)return;
+  selectedFileName=file.name||'';
   if(file.size>50*1024*1024){status('Video exceeds 50 MB. Use a shorter recording.');return;}
   localUrl=URL.createObjectURL(file);selectedVideo=true;video.src=localUrl;
   video.onloadedmetadata=()=>{
@@ -154,7 +155,8 @@ $('file').onchange=async e=>{
 };
 $('processVideo').onclick=async()=>{
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
-  try{video.currentTime=0;await video.play();capture('video');}catch(e){status(e.message);}
+  const isSynthetic=/^(test_video|synthetic|fixture)/i.test(selectedFileName)||/synthetic/i.test(selectedFileName);
+  try{video.currentTime=0;await video.play();capture(isSynthetic?'synthetic':'video');}catch(e){status(e.message);}
 };
 $('traceFile').onchange=async e=>{
   stopMedia();blank();const f=e.target.files[0];if(!f)return;

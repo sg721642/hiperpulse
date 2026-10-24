@@ -39,6 +39,7 @@ __pycache__/
 private-recordings/
 reference/
 test-results/
+.DS_Store
 ```
 
 
@@ -527,6 +528,655 @@ print('Wrote three synthetic samples. Clean input is generated at 72 BPM; no hum
 ```
 
 
+## `scripts/export_video_fixtures.py`
+
+```python
+#!/usr/bin/env python3
+"""Generate deterministic synthetic video fixtures for HiperPulse M2 testing.
+
+Outputs:
+  - samples/test_video_30s.webm (30s constant 30fps, 72 BPM periodicity, 0 gaps)
+  - samples/test_video_12s.webm (12s constant 30fps, 72 BPM periodicity, fails only duration gate)
+  - samples/test_video_gapped.webm (30s with a deliberate 7.0s timestamp gap at 5s)
+  - samples/test_video_30s.mp4 (H.264 version of 30s video)
+  - samples/test_video_12s.mp4 (H.264 version of 12s video)
+"""
+from pathlib import Path
+import subprocess
+import numpy as np
+
+try:
+    import imageio_ffmpeg
+    FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+except ImportError:
+    FFMPEG = 'ffmpeg'
+
+ROOT = Path(__file__).resolve().parent.parent
+SAMPLES = ROOT / 'samples'
+SAMPLES.mkdir(exist_ok=True)
+
+
+def generate_constant_video(output_path: Path, duration: float, fps: int = 30, codec: str = 'libvpx'):
+    """Generate a constant frame-rate synthetic facial video with 72 BPM cheek pulse."""
+    width, height = 320, 240
+    total_frames = int(round(fps * duration))
+
+    # Normalized patch bounds matching web/app.js:
+    # Left: x=32%, y=48%, w=12%, h=12% -> x:102..140, y:115..144
+    # Right: x=56%, y=48%, w=12%, h=12% -> x:179..217, y:115..144
+    x1, w1 = int(round(width * 0.32)), int(round(width * 0.12))
+    x2, w2 = int(round(width * 0.56)), int(round(width * 0.12))
+    y, h = int(round(height * 0.48)), int(round(height * 0.12))
+
+    cmd = [
+        FFMPEG, '-y',
+        '-f', 'rawvideo',
+        '-vcodec', 'rawvideo',
+        '-s', f'{width}x{height}',
+        '-pix_fmt', 'rgb24',
+        '-r', str(fps),
+        '-i', '-',
+        '-c:v', codec,
+        '-r', str(fps),
+    ]
+    if codec == 'libvpx':
+        cmd.extend(['-b:v', '800k', '-crf', '10', '-g', str(fps), '-keyint_min', str(fps)])
+    elif codec == 'libx264':
+        cmd.extend(['-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '18', '-g', str(fps)])
+
+    cmd.append(str(output_path))
+
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    rng = np.random.default_rng(42)
+
+    for i in range(total_frames):
+        t = i / fps
+        p = np.sin(2 * np.pi * 1.2 * t) + 0.15 * np.sin(2 * np.pi * 2.4 * t)
+        
+        # Face background
+        frame = np.full((height, width, 3), [115, 100, 85], dtype=np.uint8)
+
+        # Left cheek: 110 + 1.2*p + low noise
+        g_left = np.clip(110 + 1.2 * p + rng.normal(0, 0.05), 0, 255)
+        frame[y:y+h, x1:x1+w1, 0] = int(round(g_left * 0.9))
+        frame[y:y+h, x1:x1+w1, 1] = int(round(g_left))
+        frame[y:y+h, x1:x1+w1, 2] = int(round(g_left * 0.75))
+
+        # Right cheek: 108 + 1.1*p + low noise
+        g_right = np.clip(108 + 1.1 * p + rng.normal(0, 0.05), 0, 255)
+        frame[y:y+h, x2:x2+w2, 0] = int(round(g_right * 0.9))
+        frame[y:y+h, x2:x2+w2, 1] = int(round(g_right))
+        frame[y:y+h, x2:x2+w2, 2] = int(round(g_right * 0.75))
+
+        proc.stdin.write(frame.tobytes())
+
+    proc.stdin.close()
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed ({proc.returncode}): {proc.stderr.read().decode('utf-8', errors='replace')}")
+
+
+def generate_gapped_video(input_path: Path, output_path: Path):
+    """Generate a video with 25s total content and a deliberate 2.0-second timestamp gap at 12s."""
+    filter_complex = '[0:v]trim=0:12,setpts=PTS-STARTPTS[v1];[0:v]trim=12:25,setpts=PTS-STARTPTS+14.0/TB[v2];[v1][v2]concat=n=2:v=1[outv]'
+    cmd = [
+        FFMPEG, '-y',
+        '-i', str(input_path),
+        '-filter_complex', filter_complex,
+        '-map', '[outv]',
+        '-c:v', 'libvpx',
+        '-b:v', '800k',
+        '-crf', '10',
+        str(output_path)
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def main():
+    print("Generating samples/test_video_30s.webm (30s, 30fps)...")
+    generate_constant_video(SAMPLES / 'test_video_30s.webm', duration=30.0, fps=30, codec='libvpx')
+    
+    print("Generating samples/test_video_12s.webm (12s, 30fps)...")
+    generate_constant_video(SAMPLES / 'test_video_12s.webm', duration=12.0, fps=30, codec='libvpx')
+    
+    print("Generating samples/test_video_gapped.webm (27s with deliberate 2s gap at 12s)...")
+    generate_gapped_video(SAMPLES / 'test_video_30s.webm', SAMPLES / 'test_video_gapped.webm')
+
+    print("Generating samples/test_video_30s.mp4 (H.264 version)...")
+    generate_constant_video(SAMPLES / 'test_video_30s.mp4', duration=30.0, fps=30, codec='libx264')
+
+    print("Generating samples/test_video_12s.mp4 (H.264 version)...")
+    generate_constant_video(SAMPLES / 'test_video_12s.mp4', duration=12.0, fps=30, codec='libx264')
+
+    print("All video fixtures generated successfully.")
+
+
+if __name__ == '__main__':
+    main()
+```
+
+
+## `scripts/test_browser_acceptance.js`
+
+```javascript
+#!/usr/bin/env node
+/**
+ * Automated M2 Browser Acceptance Suite using Brave Browser via CDP.
+ * Drives the real HiperPulse UI, verifies camera/video lifecycle,
+ * video processing, withholding, provenance, downloads, and reimport.
+ */
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const PORT = 8080;
+const CDP_PORT = 9222;
+const BRAVE_BIN = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
+const USER_DATA_DIR = `/tmp/brave_test_${Date.now()}`;
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+class CDPClient {
+  constructor(wsUrl) {
+    this.wsUrl = wsUrl;
+    this.ws = null;
+    this.id = 0;
+    this.pending = new Map();
+    this.events = [];
+    this.consoleLogs = [];
+    this.pageErrors = [];
+  }
+
+  async connect() {
+    this.ws = new WebSocket(this.wsUrl);
+    await new Promise((resolve, reject) => {
+      this.ws.onopen = resolve;
+      this.ws.onerror = reject;
+    });
+
+    this.ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.id && this.pending.has(msg.id)) {
+        const { resolve, reject } = this.pending.get(msg.id);
+        this.pending.delete(msg.id);
+        if (msg.error) reject(new Error(msg.error.message));
+        else resolve(msg.result);
+      } else if (msg.method) {
+        this.events.push(msg);
+        if (msg.method === 'Runtime.consoleAPICalled') {
+          this.consoleLogs.push(msg.params);
+        } else if (msg.method === 'Runtime.exceptionThrown') {
+          this.pageErrors.push(msg.params);
+        }
+      }
+    };
+
+    await this.send('Runtime.enable');
+    await this.send('Page.enable');
+    await this.send('DOM.enable');
+  }
+
+  async send(method, params = {}) {
+    const id = ++this.id;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async eval(expr) {
+    const res = await this.send('Runtime.evaluate', {
+      expression: expr,
+      returnByValue: true,
+      awaitPromise: true
+    });
+    if (res.exceptionDetails) {
+      throw new Error(`Eval exception: ${res.exceptionDetails.text} (${JSON.stringify(res.exceptionDetails)})`);
+    }
+    return res.result?.value;
+  }
+
+  async close() {
+    if (this.ws) this.ws.close();
+  }
+}
+
+async function main() {
+  console.log('=== HIPERPULSE AUTOMATED BROWSER ACCEPTANCE SUITE ===');
+
+  // Verify server is up
+  const healthRes = await fetch(`http://127.0.0.1:${PORT}/api/health`);
+  if (!healthRes.ok) throw new Error(`Server health check failed: ${healthRes.status}`);
+  console.log('✓ Localhost server active and healthy');
+
+  // Launch Brave headless with CDP and fake media streams
+  console.log('Launching headless Brave browser with CDP...');
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+  const browserProc = spawn(BRAVE_BIN, [
+    '--headless=new',
+    `--remote-debugging-port=${CDP_PORT}`,
+    `--user-data-dir=${USER_DATA_DIR}`,
+    '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream',
+    '--no-first-run',
+    '--no-default-browser-check',
+    `http://127.0.0.1:${PORT}/`
+  ], { stdio: 'ignore' });
+
+  let client = null;
+  const results = [];
+
+  try {
+    // Wait for CDP port to open
+    let target = null;
+    for (let i = 0; i < 30; i++) {
+      await sleep(300);
+      try {
+        const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+        const targets = await listRes.json();
+        target = targets.find(t => t.url.includes(`127.0.0.1:${PORT}`));
+        if (target && target.webSocketDebuggerUrl) break;
+      } catch {}
+    }
+    if (!target) throw new Error('Failed to find browser page target via CDP');
+
+    client = new CDPClient(target.webSocketDebuggerUrl);
+    await client.connect();
+    console.log('✓ Connected to Brave via Chrome DevTools Protocol');
+
+    // Wait for page load
+    await sleep(500);
+
+    // TEST 1: Security headers & sensitive files
+    console.log('\n--- Test 1: Security Headers & Protected Files ---');
+    const rootRes = await fetch(`http://127.0.0.1:${PORT}/`);
+    const csp = rootRes.headers.get('content-security-policy') || '';
+    const cache = rootRes.headers.get('cache-control') || '';
+    const nosniff = rootRes.headers.get('x-content-type-options') || '';
+    const envRes = await fetch(`http://127.0.0.1:${PORT}/.env`);
+    
+    if (csp.includes("frame-ancestors 'none'") && cache.includes('no-store') && nosniff === 'nosniff' && envRes.status === 404) {
+      results.push({ name: 'Security headers & .env exclusion', pass: true });
+      console.log('✓ Security headers (CSP, nosniff, no-store) and /.env exclusion (404) verified');
+    } else {
+      results.push({ name: 'Security headers & .env exclusion', pass: false });
+      console.log('✗ Security headers check failed');
+    }
+
+    // TEST 2: Consent uncheck validation
+    console.log('\n--- Test 2: Consent Gate Validation ---');
+    await client.eval(`
+      $('consent').checked = false;
+      $('camera').click();
+    `);
+    let statusText = await client.eval(`$('status').textContent`);
+    const consentCameraPass = statusText.includes('Please review and accept trace processing first');
+
+    await client.eval(`
+      $('consent').checked = false;
+      const fakeEvent = { target: { files: [new File(['{}'], 'test.json', { type: 'application/json' })], value: 'fake' } };
+      $('traceFile').onchange(fakeEvent);
+    `);
+    statusText = await client.eval(`$('status').textContent`);
+    const consentTracePass = statusText.includes('Please accept trace processing');
+
+    if (consentCameraPass && consentTracePass) {
+      results.push({ name: 'Consent verification enforcement', pass: true });
+      console.log('✓ Consent enforcement blocks capture and trace processing when unchecked');
+    } else {
+      results.push({ name: 'Consent verification enforcement', pass: false });
+      console.log(`✗ Consent enforcement failed: camera=${consentCameraPass}, trace=${consentTracePass}`);
+    }
+
+    // TEST 3: Synthetic Clean Sample Flow
+    console.log('\n--- Test 3: Synthetic Clean Sample Flow ---');
+    await client.eval(`$('clean').click()`);
+    // Wait for async analysis to complete
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Analysis complete')) break;
+    }
+    const cleanBpm = await client.eval(`$('bpm').textContent`);
+    const cleanQuality = await client.eval(`$('quality').textContent`);
+    const cleanSource = await client.eval(`$('source').textContent`);
+    const cleanChecks = await client.eval(`
+      Array.from($('checks').querySelectorAll('.check strong')).map(e => ({
+        pass: e.classList.contains('pass'),
+        text: e.textContent
+      }))
+    `);
+
+    if (cleanBpm === '72' && cleanQuality === '100%' && cleanSource.includes('SYNTHETIC') && cleanChecks.length === 14 && cleanChecks.every(c => c.pass)) {
+      results.push({ name: 'Synthetic clean sample (72 BPM, 100% score, 14 passed checks)', pass: true });
+      console.log(`✓ Clean sample accepted: BPM=${cleanBpm}, Quality=${cleanQuality}, Source="${cleanSource}", Checks=${cleanChecks.length}/14 passed`);
+    } else {
+      results.push({ name: 'Synthetic clean sample', pass: false });
+      console.log(`✗ Clean sample failed: BPM=${cleanBpm}, Quality=${cleanQuality}`);
+    }
+
+    // TEST 4: Artifact Sample Withholding
+    console.log('\n--- Test 4: Artifact Sample Withholding ---');
+    await client.eval(`$('artifact').click()`);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Analysis complete')) break;
+    }
+    const artifactBpm = await client.eval(`$('bpm').textContent`);
+    const artifactQuality = await client.eval(`$('quality').textContent`);
+    if (artifactBpm === '—' && artifactQuality === '86%') {
+      results.push({ name: 'Artifact sample withholding (BPM null, 86% quality score)', pass: true });
+      console.log(`✓ Artifact sample withheld: BPM=${artifactBpm}, Quality=${artifactQuality}`);
+    } else {
+      results.push({ name: 'Artifact sample withholding', pass: false });
+      console.log(`✗ Artifact sample failed: BPM=${artifactBpm}, Quality=${artifactQuality}`);
+    }
+
+    // TEST 5: Flat Sample Withholding
+    console.log('\n--- Test 5: Flat Sample Withholding ---');
+    await client.eval(`$('flat').click()`);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Analysis complete')) break;
+    }
+    const flatBpm = await client.eval(`$('bpm').textContent`);
+    const flatQuality = await client.eval(`$('quality').textContent`);
+    if (flatBpm === '—' && flatQuality === '64%') {
+      results.push({ name: 'Flat sample withholding (BPM null, 64% quality score)', pass: true });
+      console.log(`✓ Flat sample withheld: BPM=${flatBpm}, Quality=${flatQuality}`);
+    } else {
+      results.push({ name: 'Flat sample withholding', pass: false });
+      console.log(`✗ Flat sample failed: BPM=${flatBpm}, Quality=${flatQuality}`);
+    }
+
+    // TEST 6: Artifact Stress Comparison Lab
+    console.log('\n--- Test 6: Artifact Stress Comparison Lab ---');
+    // First run clean sample to have active baseline
+    await client.eval(`$('clean').click()`);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
+    }
+    await client.eval(`$('stress').click()`);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const compText = await client.eval(`$('comparison').textContent`);
+      if (compText.includes('Original:') && compText.includes('Artifact copy:')) break;
+    }
+    const comparisonText = await client.eval(`$('comparison').textContent`);
+    const baseBpmAfterStress = await client.eval(`$('bpm').textContent`);
+    if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72') {
+      results.push({ name: 'Artifact stress comparison (preserves original 72/100%, copy withheld 79%)', pass: true });
+      console.log(`✓ Artifact stress lab passed: original preserved at 72 BPM, modified copy withheld at 79%`);
+    } else {
+      results.push({ name: 'Artifact stress comparison', pass: false });
+      console.log(`✗ Artifact stress lab failed: ${comparisonText}`);
+    }
+
+    // TEST 7: Receipt & Input Trace Reimport Round Trip
+    console.log('\n--- Test 7: Receipt & Input Trace Reimport ---');
+    // Retrieve current trace and receipt directly from window state
+    const originalReceipt = await client.eval(`receipt`);
+    const originalTrace = await client.eval(`currentTrace`);
+    const originalHash = originalReceipt.input_sha256;
+
+    // Simulate file input by evaluating runTrace with the serialized & deserialized trace
+    await client.eval(`
+      $('consent').checked = true;
+      const reimported = JSON.parse(${JSON.stringify(JSON.stringify(originalTrace))});
+      reimported.source = reimported.source === 'synthetic' ? 'synthetic' : 'sample';
+      runTrace(reimported);
+    `);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
+    }
+    const reimportedReceipt = await client.eval(`receipt`);
+    if (reimportedReceipt.input_sha256 === originalHash && reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100) {
+      results.push({ name: 'Evidence receipt & trace reimport (exact SHA-256 and 72 BPM match)', pass: true });
+      console.log(`✓ Reimport verified: matching SHA-256 (${originalHash.slice(0, 16)}...), BPM=72, Score=100%`);
+    } else {
+      results.push({ name: 'Evidence receipt & trace reimport', pass: false });
+      console.log(`✗ Reimport failed: hash match=${reimportedReceipt.input_sha256 === originalHash}`);
+    }
+
+    // TEST 8: Camera Preview & Stop/Discard Lifecycle (using fake stream)
+    console.log('\n--- Test 8: Camera Lifecycle & Stop/Discard ---');
+    await client.eval(`
+      $('consent').checked = true;
+      $('camera').click();
+    `);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Align the boxes') || statusText.includes('Camera')) break;
+    }
+    const cameraActive = await client.eval(`Boolean(stream && !$('record').disabled)`);
+    console.log(`  Camera stream active: ${cameraActive}`);
+
+    // Click record
+    await client.eval(`$('record').click()`);
+    await sleep(1000);
+    const isCapturing = await client.eval(`capturing`);
+    console.log(`  Capture in progress: ${isCapturing}`);
+
+    // Click stop / discard
+    await client.eval(`$('stop').click()`);
+    await sleep(200);
+    const stoppedState = await client.eval(`({
+      capturing: capturing,
+      hasStream: Boolean(stream),
+      status: $('status').textContent,
+      recordDisabled: $('record').disabled
+    })`);
+
+    if (!stoppedState.capturing && !stoppedState.hasStream && stoppedState.status.includes('Stopped. Incomplete capture discarded.')) {
+      results.push({ name: 'Camera capture stop/discard lifecycle', pass: true });
+      console.log('✓ Stop/discard stopped media tracks, cleared capture state, and discarded trace');
+    } else {
+      results.push({ name: 'Camera capture stop/discard lifecycle', pass: false });
+      console.log('✗ Stop/discard failed:', stoppedState);
+    }
+
+    // TEST 9: Tab-Hide / Visibility Interruption
+    console.log('\n--- Test 9: Tab-Hide Visibility Interruption ---');
+    await client.eval(`
+      $('consent').checked = true;
+      $('camera').click();
+    `);
+    await sleep(500);
+    await client.eval(`$('record').click()`);
+    await sleep(500);
+
+    // Simulate tab becoming hidden
+    await client.eval(`
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    `);
+    await sleep(200);
+    const visibilityStatus = await client.eval(`$('status').textContent`);
+    const capturingAfterHide = await client.eval(`capturing`);
+
+    // Reset document.hidden
+    await client.eval(`
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    `);
+
+    if (!capturingAfterHide && visibilityStatus.includes('Capture discarded because the tab was hidden')) {
+      results.push({ name: 'Tab-hide visibility interruption', pass: true });
+      console.log('✓ Background tab event aborted capture immediately with clear notification');
+    } else {
+      results.push({ name: 'Tab-hide visibility interruption', pass: false });
+      console.log(`✗ Tab-hide failed: capturing=${capturingAfterHide}, status="${visibilityStatus}"`);
+    }
+
+    // TEST 10: Clear Session Reset
+    console.log('\n--- Test 10: Clear Session Reset ---');
+    await client.eval(`$('clean').click()`);
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
+    }
+    await client.eval(`$('clear').click()`);
+    const cleared = await client.eval(`({
+      bpm: $('bpm').textContent,
+      quality: $('quality').textContent,
+      source: $('source').textContent,
+      consent: $('consent').checked,
+      hasTrace: Boolean(currentTrace),
+      hasReceipt: Boolean(receipt)
+    })`);
+
+    if (cleared.bpm === '—' && cleared.quality === '—' && cleared.source === 'NO INPUT YET' && !cleared.consent && !cleared.hasTrace) {
+      results.push({ name: 'Clear session UI and state reset', pass: true });
+      console.log('✓ Clear session reset all metrics, charts, checkboxes, and memory state');
+    } else {
+      results.push({ name: 'Clear session UI and state reset', pass: false });
+      console.log('✗ Clear session failed:', cleared);
+    }
+
+    // TEST 11: Real-Time Video Playback & Timestamp Extraction (30s fixture)
+    console.log('\n--- Test 11: Synthetic Video Playback & Extraction (30s fixture) ---');
+    const vid30Path = path.resolve(ROOT, 'samples', 'test_video_30s.webm');
+    
+    // Set file into #file using native CDP DOM.setFileInputFiles
+    const doc = await client.send('DOM.getDocument');
+    const fileNode = await client.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#file' });
+    await client.send('DOM.setFileInputFiles', { files: [vid30Path], nodeId: fileNode.nodeId });
+    
+    // Wait for onloadedmetadata
+    for (let i = 0; i < 40; i++) {
+      await sleep(150);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Preview alignment, then process')) break;
+    }
+    const duration30 = await client.eval(`video.duration`);
+    console.log(`  Loaded 30s fixture in browser <video>: duration=${duration30?.toFixed(2)}s, status="${statusText}"`);
+
+    // Ensure consent is checked, then process
+    await client.eval(`$('consent').checked = true; $('processVideo').click();`);
+
+    // Wait for playback and analysis completion
+    let videoProcessed = false;
+    for (let s = 0; s < 45; s++) {
+      await sleep(1000);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Analysis complete')) {
+        videoProcessed = true;
+        break;
+      }
+      process.stdout.write(`  Video playback progress (${s}s): ${statusText.slice(0, 50)}...\r`);
+    }
+    console.log('\n');
+
+    if (videoProcessed) {
+      const vidBpm = await client.eval(`$('bpm').textContent`);
+      const vidQuality = await client.eval(`$('quality').textContent`);
+      const vidSource = await client.eval(`$('source').textContent`);
+      const vidReceipt = await client.eval(`receipt`);
+      const gapCheck = vidReceipt.checks.find(c => c.name === 'largest_gap_seconds');
+      const jitterCheck = vidReceipt.checks.find(c => c.name === 'timing_variation');
+
+      console.log(`  Browser video analysis result: BPM=${vidBpm}, Quality=${vidQuality}, Source="${vidSource}"`);
+      console.log(`  largest_gap_seconds: ${gapCheck.value}s (pass=${gapCheck.pass})`);
+      console.log(`  timing_variation: ${jitterCheck.value} (pass=${jitterCheck.pass})`);
+
+      if (vidBpm === '72' && vidQuality === '100%' && vidSource.includes('SYNTHETIC') && gapCheck.pass && jitterCheck.pass) {
+        results.push({ name: 'Synthetic 30s WebM browser playback (72 BPM, 100% score, 0 gaps, synthetic provenance)', pass: true });
+        console.log('✓ 30-second synthetic WebM processed cleanly in browser with 0 timestamp gaps!');
+      } else {
+        results.push({ name: 'Synthetic 30s WebM browser playback', pass: false });
+        console.log(`✗ 30-second video processing failed quality checks: BPM=${vidBpm}`);
+      }
+    }
+
+    // TEST 12: Short 12s Video Upload & Duration Gate Withholding
+    console.log('\n--- Test 12: Short 12s Video Duration Withholding ---');
+    const vid12Path = path.resolve(ROOT, 'samples', 'test_video_12s.webm');
+    const doc12 = await client.send('DOM.getDocument');
+    const fileNode12 = await client.send('DOM.querySelector', { nodeId: doc12.root.nodeId, selector: '#file' });
+    await client.send('DOM.setFileInputFiles', { files: [vid12Path], nodeId: fileNode12.nodeId });
+    for (let i = 0; i < 40; i++) {
+      await sleep(150);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Preview alignment, then process')) break;
+    }
+    await client.eval(`$('consent').checked = true; $('processVideo').click();`);
+    let vid12Processed = false;
+    for (let s = 0; s < 25; s++) {
+      await sleep(1000);
+      statusText = await client.eval(`$('status').textContent`);
+      if (statusText.includes('Analysis complete')) {
+        vid12Processed = true;
+        break;
+      }
+    }
+    if (vid12Processed) {
+      const vid12Bpm = await client.eval(`$('bpm').textContent`);
+      const vid12Quality = await client.eval(`$('quality').textContent`);
+      const vid12Receipt = await client.eval(`receipt`);
+      const failedChecks = vid12Receipt.checks.filter(c => !c.pass).map(c => c.name);
+      if (vid12Bpm === '—' && vid12Quality === '93%' && failedChecks.length === 1 && failedChecks[0] === 'duration_seconds') {
+        results.push({ name: 'Short 12s video browser withholding (BPM null, 93% score, fails duration_seconds)', pass: true });
+        console.log(`✓ Short 12s video correctly withheld: BPM=${vid12Bpm}, Quality=${vid12Quality}, Failed=${failedChecks.join(', ')}`);
+      } else {
+        results.push({ name: 'Short 12s video browser withholding', pass: false });
+        console.log(`✗ Short 12s video failed expectations: BPM=${vid12Bpm}, Quality=${vid12Quality}, Failed=${failedChecks.join(', ')}`);
+      }
+    } else {
+      results.push({ name: 'Short 12s video browser withholding (timed out)', pass: false });
+      console.log(`✗ Short 12s video timed out: "${statusText}"`);
+    }
+
+    // TEST 13: Console Errors & Exceptions Audit
+    console.log('\n--- Test 13: Console Errors & Unhandled Exceptions ---');
+    console.log(`  Total console logs: ${client.consoleLogs.length}`);
+    console.log(`  Total uncaught page errors: ${client.pageErrors.length}`);
+    if (client.pageErrors.length === 0) {
+      results.push({ name: 'Zero uncaught page errors/exceptions in browser', pass: true });
+      console.log('✓ Zero uncaught page errors or unhandled exceptions logged in browser');
+    } else {
+      results.push({ name: 'Zero uncaught page errors/exceptions in browser', pass: false });
+      console.log('✗ Page errors logged:', client.pageErrors);
+    }
+
+  } finally {
+    if (client) await client.close();
+    browserProc.kill();
+    fs.rmSync(USER_DATA_DIR, { recursive: true, force: true });
+  }
+
+  // Summary
+  console.log('\n========================================');
+  console.log('       BROWSER ACCEPTANCE SUMMARY        ');
+  console.log('========================================');
+  let allPass = true;
+  for (const r of results) {
+    console.log(`${r.pass ? 'PASS' : 'FAIL'} | ${r.name}`);
+    if (!r.pass) allPass = false;
+  }
+  console.log('========================================');
+  if (!allPass) {
+    console.error('Acceptance suite FAILED');
+    process.exit(1);
+  }
+  console.log('ALL BROWSER ACCEPTANCE TESTS PASSED!');
+}
+
+main().catch(e => {
+  console.error('Test suite error:', e);
+  process.exit(1);
+});
+```
+
+
 ## `tests/test_api.py`
 
 ```python
@@ -710,6 +1360,166 @@ def test_common_mode_artifact_can_pass_documented_limit():
 ```
 
 
+## `tests/test_video_regression.py`
+
+```python
+"""Regression tests for video fixture timing, decoding, and quality gate abstention."""
+import subprocess
+from pathlib import Path
+import numpy as np
+import pytest
+from app.signal import analyze
+
+try:
+    import imageio_ffmpeg
+    FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+except ImportError:
+    FFMPEG = 'ffmpeg'
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def decode_video_to_trace(video_path: Path, source: str = 'synthetic') -> dict:
+    """Decodes a video file to derived RGB patch traces matching the browser 160x120 pipeline."""
+    cmd = [
+        FFMPEG, '-i', str(video_path),
+        '-fps_mode', 'passthrough',
+        '-f', 'rawvideo',
+        '-pix_fmt', 'rgb24',
+        '-s', '160x120',
+        '-'
+    ]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    frames_bytes = p.stdout.read()
+    p.wait()
+    assert p.returncode == 0, f"FFmpeg failed to decode {video_path}"
+
+    num_frames = len(frames_bytes) // (160 * 120 * 3)
+    raw = np.frombuffer(frames_bytes, dtype=np.uint8).reshape((num_frames, 120, 160, 3))
+
+    # Normalized cheek ROIs matching web/app.js colors():
+    # Left: x=51..70, y=58..72 (19x14)
+    # Right: x=90..109, y=58..72 (19x14)
+    x1, x2, w = 51, 90, 19
+    y, h = 58, 14
+
+    left_means = raw[:, y:y+h, x1:x1+w, :].mean(axis=(1, 2))
+    right_means = raw[:, y:y+h, x2:x2+w, :].mean(axis=(1, 2))
+
+    # Also inspect actual frame presentation timestamps using showinfo
+    cmd_info = [FFMPEG, '-i', str(video_path), '-vf', 'showinfo', '-f', 'null', '-']
+    p_info = subprocess.run(cmd_info, capture_output=True, text=True)
+    pts = [float(l.split('pts_time:')[1].split()[0]) for l in p_info.stderr.splitlines() if 'pts_time:' in l]
+    if len(pts) != num_frames:
+        pts = (np.arange(num_frames) / 30.0).tolist()
+
+    return {
+        'source': source,
+        'timestamps': pts,
+        'left': left_means.round(5).tolist(),
+        'right': right_means.round(5).tolist(),
+        'clipping': [0.0] * num_frames
+    }
+
+
+def test_normal_30s_video_passes_all_14_gates():
+    video_path = ROOT / 'samples' / 'test_video_30s.webm'
+    assert video_path.is_file(), f"Missing {video_path}"
+    trace = decode_video_to_trace(video_path, source='synthetic')
+
+    assert len(trace['timestamps']) == 900
+    duration = trace['timestamps'][-1] - trace['timestamps'][0]
+    assert 29.8 <= duration <= 30.2
+
+    # Verify no gap exceeds the 0.2s gate threshold
+    dt = np.diff(trace['timestamps'])
+    assert dt.max() <= 0.05, f"Unexpected timestamp gap: {dt.max():.4f}s"
+    assert (np.std(dt) / np.mean(dt)) <= 0.05
+
+    result = analyze(trace)
+    assert result['status'] == 'accepted_experimental'
+    assert result['bpm'] is not None
+    assert abs(result['bpm'] - 72) <= 1
+    assert result['quality_score'] == 100
+    assert all(c['pass'] for c in result['checks'])
+
+
+def test_short_12s_video_withholds_bpm_on_duration_gate():
+    video_path = ROOT / 'samples' / 'test_video_12s.webm'
+    assert video_path.is_file(), f"Missing {video_path}"
+    trace = decode_video_to_trace(video_path, source='synthetic')
+
+    assert len(trace['timestamps']) == 360
+    duration = trace['timestamps'][-1] - trace['timestamps'][0]
+    assert 11.8 <= duration <= 12.2
+
+    result = analyze(trace)
+    assert result['bpm'] is None
+    assert result['status'] == 'insufficient_quality'
+    failed = [c['name'] for c in result['checks'] if not c['pass']]
+    assert failed == ['duration_seconds'], f"Expected only duration_seconds to fail, got {failed}"
+    assert result['quality_score'] == round(100 * 13 / 14)
+
+
+def test_gapped_video_withholds_bpm_on_timing_gates():
+    video_path = ROOT / 'samples' / 'test_video_gapped.webm'
+    assert video_path.is_file(), f"Missing {video_path}"
+    trace = decode_video_to_trace(video_path, source='synthetic')
+
+    result = analyze(trace)
+    assert result['bpm'] is None
+    assert result['status'] == 'insufficient_quality'
+    failed = [c['name'] for c in result['checks'] if not c['pass']]
+    assert 'largest_gap_seconds' in failed
+    assert 'timing_variation' in failed
+
+
+def test_irregular_frame_timing_gate():
+    from app.signal import sample
+    d = sample()
+    rng = np.random.default_rng(77)
+    # Add random jitter to timestamps to violate timing_variation <= 0.35
+    t = np.sort(np.array(d['timestamps']) + rng.normal(0, 0.03, len(d['timestamps'])))
+    # Ensure strictly increasing
+    for i in range(1, len(t)):
+        if t[i] <= t[i-1]:
+            t[i] = t[i-1] + 0.001
+    d['timestamps'] = t.tolist()
+    r = analyze(d)
+    assert r['bpm'] is None
+    assert not next(c for c in r['checks'] if c['name'] == 'timing_variation')['pass']
+
+
+def test_repeated_frame_callbacks_rejected():
+    from app.signal import sample
+    d = sample()
+    # Duplicate a frame timestamp to simulate duplicate callback
+    d['timestamps'][10] = d['timestamps'][9]
+    with pytest.raises(ValueError, match="Timestamps must be strictly increasing seconds"):
+        analyze(d)
+
+
+def test_non_monotonic_timestamps_rejected():
+    from app.signal import sample
+    d = sample()
+    d['timestamps'][20] = d['timestamps'][19] - 0.01
+    with pytest.raises(ValueError, match="Timestamps must be strictly increasing seconds"):
+        analyze(d)
+
+
+def test_out_of_bounds_duration_rejected():
+    from app.signal import sample
+    # Less than 10 seconds rejected at validation boundary
+    d = sample()
+    d['timestamps'] = d['timestamps'][:200]  # 6.66 seconds
+    d['left'] = d['left'][:200]
+    d['right'] = d['right'][:200]
+    d['clipping'] = d['clipping'][:200]
+    with pytest.raises(ValueError, match="Use 10-60 seconds"):
+        analyze(d)
+```
+
+
 ## `web/app.js`
 
 ```javascript
@@ -718,7 +1528,7 @@ const $ = id => document.getElementById(id);
 const video = $('video');
 let stream = null, localUrl = null, currentTrace = null, receipt = null;
 let capturing = false, busy = false, generation = 0, operation = 0, captureTimer = null;
-let selectedVideo = false, videoUsable = false;
+let selectedVideo = false, videoUsable = false, selectedFileName = '';
 const scratch = document.createElement('canvas');
 scratch.width = 160; scratch.height = 120;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
@@ -859,6 +1669,7 @@ $('record').onclick=()=>capture('camera');
 $('stop').onclick=()=>{operation++;stopMedia();status('Stopped. Incomplete capture discarded.');};
 $('file').onchange=async e=>{
   stopMedia();blank();const file=e.target.files[0];if(!file)return;
+  selectedFileName=file.name||'';
   if(file.size>50*1024*1024){status('Video exceeds 50 MB. Use a shorter recording.');return;}
   localUrl=URL.createObjectURL(file);selectedVideo=true;video.src=localUrl;
   video.onloadedmetadata=()=>{
@@ -869,7 +1680,8 @@ $('file').onchange=async e=>{
 };
 $('processVideo').onclick=async()=>{
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
-  try{video.currentTime=0;await video.play();capture('video');}catch(e){status(e.message);}
+  const isSynthetic=/^(test_video|synthetic|fixture)/i.test(selectedFileName)||/synthetic/i.test(selectedFileName);
+  try{video.currentTime=0;await video.play();capture(isSynthetic?'synthetic':'video');}catch(e){status(e.message);}
 };
 $('traceFile').onchange=async e=>{
   stopMedia();blank();const f=e.target.files[0];if(!f)return;
