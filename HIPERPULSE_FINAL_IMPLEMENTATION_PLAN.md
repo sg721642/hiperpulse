@@ -781,15 +781,18 @@ Prepared 25 October 2026. This file separates observed software checks from task
 |---|---|---|
 | Automated unit & API test suite | 34 passed | VERIFIED (34 passed, 1.27s) |
 | JavaScript syntax check | Passes node --check | VERIFIED |
-| Sample analyze endpoints | 72 BPM / null withholding | VERIFIED |
-| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | NOT RUN (pending M2) |
+| Sample analyze endpoints | 72 BPM / null withholding | VERIFIED (Clean 72/100%, Artifact null/86%, Flat null/64%) |
+| Artifact comparison lab | Original preserved, copy withheld | VERIFIED (Original 72/100%, Copy null/79%, 3 failed gates) |
+| JSON load and export round trip | Same meaningful receipt/hash after normalization | VERIFIED (Deterministic SHA-256 match, 14 checks preserved) |
+| Desktop viewport layout | Dual-column cards, no overlap | VERIFIED (1280x1024 screenshot inspected via Brave headless) |
+| Mobile/narrow viewport | Readable controls, no clipped cards | VERIFIED (375x812 single-column responsive layout inspected) |
+| Public GitHub repository | Code, lock, docs synchronized | VERIFIED (https://github.com/sg721642/hiperpulse, SHA matched) |
+| Desktop webcam, steady light, 30 s | Completion, observed gates, honest output | NOT RUN (pending M2 manual test) |
 | Phone browser over HTTPS | Camera permission and timed capture | NOT RUN (pending deployment) |
-| Camera denial | Useful message, samples remain available | NOT RUN (pending M2) |
-| Stop during capture | Tracks stopped, incomplete trace discarded | NOT RUN (pending M2) |
-| Hide tab during capture | Abort; no stale estimate | NOT RUN (pending M2) |
-| Local video supported codec | Process first <=30 s, maintain timestamps | NOT RUN (pending M2) |
-| JSON load and export round trip | Same meaningful receipt/hash after normalization | NOT RUN (pending M3) |
-| Mobile/narrow viewport | Readable controls, no clipped cards | NOT RUN (pending M5) |
+| Camera denial | Useful message, samples remain available | NOT RUN (pending M2 manual test) |
+| Stop during capture | Tracks stopped, incomplete trace discarded | NOT RUN (pending M2 manual test) |
+| Hide tab during capture | Abort; no stale estimate | NOT RUN (pending M2 manual test) |
+| Local video supported codec | Process first <=30 s, maintain timestamps | NOT RUN (pending M2 manual test) |
 | Actual Gemma 4 provider | Correct provider/model, no unsupported interpretation | NOT RUN (pending M4 credentials) |
 | Actual provider timeout/quota | Labelled deterministic fallback | NOT RUN (mock verified) |
 | Docker build | Starts as non-root on 8080 | NOT RUN (pending M6) |
