@@ -164,6 +164,7 @@ async function main() {
     '--headless=new',
     '--no-sandbox',
     '--disable-dev-shm-usage',
+    '--disable-gpu',
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${USER_DATA_DIR}`,
     '--use-fake-ui-for-media-stream',
@@ -171,7 +172,7 @@ async function main() {
     '--no-first-run',
     '--no-default-browser-check',
     `http://127.0.0.1:${PORT}/`
-  ], { stdio: 'ignore' });
+  ], { stdio: 'inherit' });
 
   let client = null;
   const testResults = new Map();
@@ -190,15 +191,16 @@ async function main() {
   }
 
   try {
-    // Wait for CDP port to open
+    // Wait for CDP port to open and find target
     let target = null;
-    for (let i = 0; i < 30; i++) {
-      await sleep(300);
+    for (let i = 0; i < 50; i++) {
+      await sleep(500);
       try {
         const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
         const targets = await listRes.json();
-        target = targets.find(t => t.url.includes(`127.0.0.1:${PORT}`));
-        if (target && target.webSocketDebuggerUrl) break;
+        target = targets.find(t => t.url?.includes(`:${PORT}`) && t.webSocketDebuggerUrl) ||
+                 targets.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
+        if (target) break;
       } catch {}
     }
     if (!target) throw new Error('Failed to find browser page target via CDP');
@@ -206,7 +208,10 @@ async function main() {
     client = new CDPClient(target.webSocketDebuggerUrl);
     await client.connect();
     console.log('✓ Connected via Chrome DevTools Protocol');
-    await sleep(500);
+
+    // Ensure the page is navigated to target URL and loaded
+    await client.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
+    await sleep(1500);
 
     // TEST 1: Security headers & sensitive files
     console.log('\n--- Test 1: Security Headers & Protected Files ---');
