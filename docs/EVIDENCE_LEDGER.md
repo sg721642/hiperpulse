@@ -170,7 +170,7 @@
 - **Fix 3 (Documentation & Historical Provenance Correction):**
   - Replaced typographical SHA `3c790d0bcece7a7b8e1f0e4b8ee34681577ffcba` with exact git commit SHA `3c790d088b4345b62c6017101c51a1002309b427` (CI run `40151348462`).
   - Accurately documented offline browser test counts as 13 passed, 4 skipped (17 registered/accounted for).
-  - Documented both historical runs at `fdb86b8` (`40151615140` PASS and `40151612925` browser startup failure), and documented latest baseline `8ac073d` with successful CI runs `40153753168` and `40153755537`.
+  - Documented both historical runs at `fdb86b8` (`40151615140` PASS and `40151612925` browser startup failure), baseline `8ac073d` (`40153753168` and `40153755537`), and latest verified baseline `b10c5cb` with successful CI runs `40155642898` (`main`) and `40155645818` (`remediation/audit-hardening`).
 - **Fix 4 (Judge Evidence Card Honest Provenance Classification):**
   - Added explicit 8-scenario provenance matrix in `web/app.js` and `scripts/test_browser_acceptance.js`. Unauthenticated trace imports from camera/video receive `unverified_origin: true` and `provenance_status: 'declared_not_authenticated'`.
   - Verified downloaded evidence card and trace files from disk.

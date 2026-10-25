@@ -761,12 +761,12 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427` and `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`.
-- Latest audited baseline: `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
+- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, and `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
+- Latest verified audit-polish baseline: `b10c5cbe524fc6c0d310787d5cc92cc396276a36`.
 - GitHub Actions CI runs:
-  - Run [`40153753168`](https://github.com/sg721642/hiperpulse/actions/runs/40153753168) on `main` at `8ac073d`: ALL 3 JOBS PASSED (Build, Lint & Test: 1m1s; Docker Build & Smoke: 28s; Offline Browser Acceptance: 2m17s — 13 PASS, 4 SKIP).
-  - Run [`40153755537`](https://github.com/sg721642/hiperpulse/actions/runs/40153755537) on `remediation/audit-hardening` at `8ac073d`: ALL 3 JOBS PASSED (Build, Lint & Test: 59s; Docker Build & Smoke: 24s; Offline Browser Acceptance: 2m3s — 13 PASS, 4 SKIP).
-  - Historical runs: `40151348462` (all 3 jobs green on `3c790d088b4`), `40151615140` (all 3 jobs green on `fdb86b8`), run `40151612925` (browser startup failure investigated and resolved via Fix 2).
+  - Run [`40155642898`](https://github.com/sg721642/hiperpulse/actions/runs/40155642898) on `main` at `b10c5cb`: ALL 3 JOBS PASSED (Build, Lint & Test: 50s; Docker Build & Smoke: 24s; Offline Browser Acceptance: 2m3s — 13 PASS, 4 SKIP).
+  - Run [`40155645818`](https://github.com/sg721642/hiperpulse/actions/runs/40155645818) on `remediation/audit-hardening` at `b10c5cb`: ALL 3 JOBS PASSED (Build, Lint & Test: 52s; Docker Build & Smoke: 31s; Offline Browser Acceptance: 2m38s — 13 PASS, 4 SKIP).
+  - Historical runs: `40153753168` and `40153755537` (all 3 jobs green on `8ac073d`), `40151348462` (all 3 jobs green on `3c790d088b4`), `40151615140` (all 3 jobs green on `fdb86b8`).
 - All technical fixes and verification gaps completed and verified.
 
 ## Mandatory Release Gates
