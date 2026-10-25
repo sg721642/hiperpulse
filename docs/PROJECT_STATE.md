@@ -95,30 +95,35 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - **Fix 5 (Guided Retake Percentage Points Clarification & Canvas Overlay Robustness):** Updated retake comparison delta string to `(+X percentage points)` or `(-X percentage points)` with disclaimer. In `plotOverlay`, prevented call-stack overflows with loop-based bound calculations and lifted pen across timing gaps (`> 0.25s`) on waveform overlay. In browser acceptance T06, asserted actual finite canvas coordinates, original/transformed endpoints, 450-vs-455 waveform points, timing-gap segmentation, and unequal-length spectrum coordinates (150 vs 175 points).
     - **Fix 6 (Deterministic Concurrency & Cancellation Tests):** Replaced arbitrary sleep delays in `tests/test_audit_remediation.py` with `asyncio.Event` barriers across `test_r1_cancelled_task_releases_semaphore`, `test_r1_concurrency_simultaneous_requests_admitted`, and `test_r1_concurrency_max_active_provider_calls_strictly_bounded`.
     - **Fix 7 (Source & Repository Hygiene):** Zero required files deleted; zero secrets in Git; clean professional engineering documentation.
-  - **Automated Test Status:** **94 / 94 Python tests passing** in 7.17s; **13 passed, 4 skipped (17 registered/accounted for)** in offline browser acceptance tests (17 / 17 passed when live AI configured and consent granted); structured negative timeout regression verified.
+  - **Milestone K (Premium Immersive Frontend/UI Redesign — Vizo × Active Theory):** VERIFIED.
+    - **Visual Design System:** Implemented authentic Vizo-inspired dark emerald/black palette (`#030907`, `#071310`, `#10251d`, `#244d2e`, `#3ee89f` luminous accent, `#f1cc8b` amber warning), fine hairline borders, optical grid background textures, and SIL Open Font License typography (Syne, Instrument Sans, IBM Plex Mono).
+    - **Active Theory Motion Choreography:** Created interactive hero optical wave canvas simulation with mouse repulsion/parallax, throttled rendering, and `IntersectionObserver` / `visibilitychange` resource-pausing; added scanning laser sweep animation on `.capture-stage` during active recording; integrated reduced-motion media query support.
+    - **Modular Lab Cockpit:** Built high-hierarchy 2-column layout (Left: Viewport station with technical cheek reticles, corner brackets, CHEEK_L/CHEEK_R badges, scanning sweep, and status ticker; Right: Floating telemetry cards for BPM, heuristic quality pass rate, and signal provenance).
+    - **Scientific Signal Analytics:** Rendered high-precision oscilloscope waveform and periodicity spectrum monitors with fine glowing traces, decibel/amplitude grids, and dual original (solid mint) vs challenge (dashed amber) overlay plotting.
+    - **14 Quality Gates & Guided Retake:** Integrated 14 heuristic checks into an expandable telemetry drawer; implemented Guided Retake comparison card computing `(+X percentage points)` deltas without clinical accuracy claims.
+    - **Artifact Challenge Lab & Evidence Drawer:** Styled 3 interactive challenge modules (Module A: Timing Dropout, Module B: Conflicting Patch, Module C: Shared Periodic Light) and verification receipt drawer with Gemma 4 commentary engine.
+    - **Preserved Compatibility:** Preserved all 38 DOM element IDs, 14 quality checks, `green-evidence-1.1` baseline, and export contracts. Zero regressions in test suite.
+    - **Verification & Previews:** Captured 5 high-resolution screenshots across desktop (1440x900) and mobile (390x844); passed all 94 Python tests, 0 JS syntax errors, and 13 PASS / 4 SKIP browser acceptance tests (17 registered/accounted for).
+  - **Automated Test Status:** **94 / 94 Python tests passing** in 7.32s; **13 passed, 4 skipped (17 registered/accounted for)** in offline browser acceptance tests; structured negative timeout regression verified.
 
 ## Scope and implementation
 
-Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
+Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theory dark emerald frontend; fixed-patch browser camera/video RGB extraction; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
 
 ## Git Status
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
 - Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, and `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
-- Latest verified audit-polish baseline: `b10c5cbe524fc6c0d310787d5cc92cc396276a36`.
-- GitHub Actions CI runs:
-  - Run [`40155642898`](https://github.com/sg721642/hiperpulse/actions/runs/40155642898) on `main` at `b10c5cb`: ALL 3 JOBS PASSED (Build, Lint & Test: 50s; Docker Build & Smoke: 24s; Offline Browser Acceptance: 2m3s — 13 PASS, 4 SKIP).
-  - Run [`40155645818`](https://github.com/sg721642/hiperpulse/actions/runs/40155645818) on `remediation/audit-hardening` at `b10c5cb`: ALL 3 JOBS PASSED (Build, Lint & Test: 52s; Docker Build & Smoke: 31s; Offline Browser Acceptance: 2m38s — 13 PASS, 4 SKIP).
-  - Historical runs: `40153753168` and `40153755537` (all 3 jobs green on `8ac073d`), `40151348462` (all 3 jobs green on `3c790d088b4`), `40151615140` (all 3 jobs green on `fdb86b8`).
-- All technical fixes and verification gaps completed and verified.
+- Latest verified audit-polish baseline: `b10c5cbe524fc6c0d310787d5cc92cc396276a36` (Docs sync: `451e17849e7bdf8f237f37477b79d8ce8646b1eb`).
+- Redesigned frontend verified and staged for owner review.
 
 ## Mandatory Release Gates
 
-1. `NEXT_STAGE: FRONTEND_UI_CUSTOMIZATION` — The owner explicitly requires frontend/UI modifications before deploying to DigitalOcean. Do not deploy, create cloud resources, or enable billing until the owner provides UI requirements and approves the revised UI.
-2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`
+1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend is implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_APPROVAL_AND_OWNER_AUTHORIZATION`
 3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key is marked for local use only and must be revoked and rotated before any public production deployment.
 
 ## Immediate Next Smallest Task
 
-Hard stop at Frontend Visual Customization Checkpoint. Present the completed pre-UI technical hardening and verification report to the project owner and request their visual styling requirements and design preferences before proceeding to deployment.
+Hard stop at Owner Visual Review Checkpoint. Present the implemented Vizo × Active Theory frontend, desktop/mobile screenshots, typography licensing, and test verification results to the project owner for their visual approval.

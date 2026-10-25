@@ -70,6 +70,10 @@ function controls() {
 function stopMedia() {
   capturing = false; generation++;
   clearTimeout(captureTimer);
+  const stage = document.querySelector('.capture-stage');
+  if (stage) stage.classList.remove('scanning');
+  const badge = $('viewportStatusBadge');
+  if (badge) { badge.textContent = stream ? 'LIVE' : 'STANDBY'; badge.style.color = ''; }
   if (stream) stream.getTracks().forEach(track => track.stop());
   stream = null; video.pause(); video.srcObject = null;
   video.removeAttribute('src'); video.load();
@@ -232,6 +236,11 @@ function getRetakeAdvice(checks) {
   return { primary, category, details };
 }
 function render(r) {
+  const badge = $('viewportStatusBadge');
+  if (badge) {
+    badge.textContent = r.bpm !== null ? 'LOCKED' : 'WITHHELD';
+    badge.style.color = r.bpm !== null ? '#3ee89f' : '#f1cc8b';
+  }
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
   const src = r.source || 'unknown';
@@ -321,6 +330,8 @@ $('camera').onclick=async()=>{
     const incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}}});
     if(op!==operation){incoming.getTracks().forEach(t=>t.stop());return;}
     stream=incoming;video.srcObject=stream;await video.play();
+    const badge = $('viewportStatusBadge');
+    if (badge) { badge.textContent = 'LIVE'; badge.style.color = '#3ee89f'; }
     status('Align the boxes onto both cheeks. Let exposure settle for five seconds, then capture.');
   }catch(e){stopMedia();status(`Camera unavailable: ${e.message}. You can still use a synthetic sample.`);}
   finally{busy=false;controls();}
@@ -341,6 +352,10 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
+  const stage = document.querySelector('.capture-stage');
+  if (stage) stage.classList.add('scanning');
+  const badge = $('viewportStatusBadge');
+  if (badge) { badge.textContent = 'RECORDING'; badge.style.color = '#3ee89f'; }
   const ingestion = source==='camera'?'live_capture':(source==='synthetic'?'synthetic_fixture':'local_video');
   const trace={source,ingestion,timestamps:[],left:[],right:[],clipping:[]};let first=null;
   const finish=()=>{if(ticket!==generation)return;stopMedia();runTrace(trace);};
@@ -609,3 +624,161 @@ $('clear').onclick=()=>{operation++;busy=false;stopMedia();previousSession=null;
 window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();
+
+// Active Theory inspired Interactive Hero Optical Canvas Simulation
+function initHeroSimulation() {
+  const canvas = $('heroCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let width = 0, height = 0, animationFrame = null, isVisible = true;
+  let mouseX = -1000, mouseY = -1000;
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const NODES_COUNT = 42;
+  const nodes = [];
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    width = rect.width || window.innerWidth;
+    height = rect.height || (window.innerHeight - 65);
+    canvas.width = Math.floor(width * Math.min(window.devicePixelRatio || 1, 2));
+    canvas.height = Math.floor(height * Math.min(window.devicePixelRatio || 1, 2));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(canvas.width / width, canvas.height / height);
+  }
+
+  function initNodes() {
+    nodes.length = 0;
+    for (let i = 0; i < NODES_COUNT; i++) {
+      nodes.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        radius: Math.random() * 2 + 1.2,
+        phase: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.02 + Math.random() * 0.03
+      });
+    }
+  }
+
+  function draw() {
+    if (!isVisible || prefersReduced) return;
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw connecting optical laser web
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 115) {
+          const alpha = (1 - dist / 115) * 0.22;
+          ctx.strokeStyle = `rgba(138, 232, 196, ${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Update and draw nodes
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      n.phase += n.pulseSpeed;
+
+      // Mouse repulsion / parallax
+      const mdx = n.x - mouseX;
+      const mdy = n.y - mouseY;
+      const mdist = Math.hypot(mdx, mdy);
+      if (mdist < 140 && mdist > 0) {
+        const force = (1 - mdist / 140) * 1.6;
+        n.x += (mdx / mdist) * force;
+        n.y += (mdy / mdist) * force;
+      }
+
+      n.x += n.vx;
+      n.y += n.vy;
+
+      if (n.x < 0) n.x = width;
+      else if (n.x > width) n.x = 0;
+      if (n.y < 0) n.y = height;
+      else if (n.y > height) n.y = 0;
+
+      const currentRadius = n.radius + Math.sin(n.phase) * 0.8;
+      ctx.fillStyle = 'rgba(62, 232, 159, 0.75)';
+      ctx.shadowColor = 'rgba(62, 232, 159, 0.5)';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, Math.max(0.6, currentRadius), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    animationFrame = requestAnimationFrame(draw);
+  }
+
+  resize();
+  initNodes();
+  draw();
+
+  window.addEventListener('resize', () => {
+    resize();
+    if (nodes.length === 0) initNodes();
+  });
+
+  window.addEventListener('pointermove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+  });
+
+  window.addEventListener('pointerleave', () => {
+    mouseX = -1000;
+    mouseY = -1000;
+  });
+
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          if (!isVisible) {
+            isVisible = true;
+            cancelAnimationFrame(animationFrame);
+            animationFrame = requestAnimationFrame(draw);
+          }
+        } else {
+          isVisible = false;
+          cancelAnimationFrame(animationFrame);
+        }
+      }
+    }, { threshold: 0.05 });
+    observer.observe(canvas);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      isVisible = false;
+      cancelAnimationFrame(animationFrame);
+    } else {
+      const hero = $('hero');
+      const rect = hero ? hero.getBoundingClientRect() : null;
+      if (rect && rect.bottom > 0 && rect.top < window.innerHeight) {
+        isVisible = true;
+        cancelAnimationFrame(animationFrame);
+        animationFrame = requestAnimationFrame(draw);
+      }
+    }
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initHeroSimulation);
+} else {
+  initHeroSimulation();
+}
+

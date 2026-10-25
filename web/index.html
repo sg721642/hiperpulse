@@ -1,36 +1,509 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HiperPulse | Evidence before estimates</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HiperPulse — The Living Signal Lab | Neuro-Optical Pulse Observatory</title>
+  <meta name="description" content="An experimental camera-based pulse signal observatory built around transparent quality checks, honest estimates, and reproducible scientific evidence.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
 <body>
-<header><a class="brand" href="/">◉ HiperPulse</a><span class="badge">EXPERIMENTAL / v1.1</span></header>
-<main>
-<section class="intro"><p class="eyebrow">CAMERA SIGNAL LAB</p><h1>Evidence before<br><em>estimates.</em></h1><p>Explore a pulse-like signal. See what supports it, what disrupts it, and when an estimate should be withheld.</p><p class="warning">Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.</p></section>
-<div class="layout">
-<section class="panel"><h2>01 / Choose an input</h2><p>Start with a labelled synthetic signal, or capture 30 seconds in steady light.</p>
-<div class="buttons"><button id="clean">Clean synthetic sample</button><button id="artifact" class="secondary">Artifact sample</button><button id="flat" class="secondary">Flat sample</button></div>
-<div class="capture"><video id="video" muted playsinline></video><div class="guide" aria-hidden="true"><span class="roi left"></span><span class="roi right"></span></div></div>
-<p class="hint">For camera/video: place the two boxes on bare cheek skin, below the eyes. This fixed guide does not detect faces or track movement. Keep your face still; no filters, flashlight, or digital zoom.</p>
-<label class="consent"><input id="consent" type="checkbox"> I consent to sending derived color traces to this server for analysis. Video frames remain in my browser; the app does not persist traces.</label>
-<div class="buttons"><button id="camera" class="secondary">Open camera</button><button id="record" disabled>Capture 30 seconds</button><button id="stop" class="secondary" disabled>Stop / discard</button></div>
-<label class="file">Choose local video (10–60 s, up to 50 MB)<input id="file" type="file" accept="video/*"></label>
-<button id="processVideo" class="secondary" disabled>Process selected video</button>
-<label class="file">Or load a trace JSON (up to 2 MB)<input id="traceFile" type="file" accept=".json,application/json"></label>
-<p id="status" role="status" aria-live="polite">Ready. No camera is active.</p>
-</section>
-<section class="panel result"><h2>02 / Inspect the evidence</h2><p id="source" class="eyebrow">NO INPUT YET</p>
-<div class="metrics"><div><span id="bpm" class="number">—</span><span class="unit">experimental BPM</span></div><div><span id="quality" class="number small">—</span><span class="unit">checks passed</span></div></div>
-<p id="decision">Choose an input to begin.</p><p class="hint">The score is the fraction of heuristic checks passed, not confidence or accuracy. Shared lighting artifacts can pass every check.</p>
-<h3>Pulse-like waveform</h3><canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas><p id="waveLegend" class="axis">Time (seconds) · normalized amplitude (arbitrary units · solid: original, dashed: challenge)</p>
-<h3>Periodicity spectrum</h3><canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas><p id="spectrumLegend" class="axis">Frequency equivalent (BPM) · relative spectral power (solid: original, dashed: challenge)</p>
-<details><summary>View quality checks and retake guidance</summary><div id="checks"></div></details>
-<div id="retakeSection" class="retake-section"><h3>Guided retake analysis</h3><p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p><p id="retakeComparison" class="hint" style="white-space:pre-wrap;"></p><button id="retakeAction" class="secondary" disabled>Retake / capture again</button></div>
-<div class="buttons"><button id="receipt" class="secondary" disabled>Download evidence receipt</button><button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button><button id="trace" class="secondary" disabled>Download input trace</button></div>
-<h3>Artifact challenge lab</h3><p class="hint">Compare this trace with controlled algorithmic stress tests on an in-memory copy. Tests continuity, bilateral agreement, and shared ambient lighting artifacts.</p>
-<div class="buttons"><button id="challengeA" class="secondary" disabled>Challenge A: Timing dropout</button><button id="challengeB" class="secondary" disabled>Challenge B: Conflicting patch</button><button id="challengeC" class="secondary" disabled>Challenge C: Shared periodic light</button><button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button></div><p id="comparison"></p>
-<h3>03 / Explain the session</h3><label class="consent"><input id="aiConsent" type="checkbox"> Send the calculated summary to Google's Gemini API for a Gemma 4 explanation.</label>
-<label>Demo password <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner"></label>
-<button id="explain" disabled>Explain with Gemma 4</button><p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>
-<button id="clear" class="secondary">Clear session</button>
-</section></div>
-<footer>GREEN baseline · transparent quality checks · Gemma 4 explanations · DigitalOcean-ready<br>Lighting, movement, skin reflectance, exposure and camera processing affect results. A plausible number is not evidence of clinical accuracy.</footer>
-</main></body></html>
+  <!-- Top Navigation Bar -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="HiperPulse Home">
+        <span class="brand-symbol" aria-hidden="true">◉</span>
+        <span class="brand-name">HiperPulse</span>
+      </a>
+      <nav class="nav-links" aria-label="Main Navigation">
+        <a href="#lab" class="nav-link">Signal Lab</a>
+        <a href="#analytics" class="nav-link">Analytics</a>
+        <a href="#challenges" class="nav-link">Stress Lab</a>
+        <a href="#evidence" class="nav-link">Evidence</a>
+        <a href="#method" class="nav-link">Method</a>
+      </nav>
+      <div class="header-meta">
+        <span class="badge" title="Algorithm Baseline"><span class="badge-dot" aria-hidden="true"></span>OBSERVATORY // v1.1</span>
+        <a href="#lab" class="btn-nav-action">Launch Lab</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <!-- Cinematic Fullscreen Hero -->
+    <section id="hero" class="hero-section">
+      <canvas id="heroCanvas" class="hero-canvas" aria-hidden="true"></canvas>
+      <div class="hero-overlay" aria-hidden="true"></div>
+      <div class="hero-content">
+        <div class="hero-tagline">
+          <span class="eyebrow-badge">NEURO-OPTICAL CAMERA SIGNAL LAB</span>
+          <span class="provenance-tag">GREEN BASELINE · 14 QUALITY GATES</span>
+        </div>
+        <h1 class="hero-title">
+          SEE THE SIGNAL.<br>
+          <span class="hero-title-accent">QUESTION THE NOISE.</span>
+        </h1>
+        <p class="hero-lead">
+          An experimental optical pulse signal laboratory built around multi-gate quality verification, honest estimates, and cryptographic provenance. When noise intrudes, estimates are safely withheld.
+        </p>
+        <div class="hero-actions">
+          <a href="#lab" class="btn-hero-primary">
+            <span class="btn-text">ENTER SIGNAL LAB</span>
+            <span class="btn-arrow" aria-hidden="true">↓</span>
+          </a>
+          <a href="#method" class="btn-hero-secondary">
+            <span class="btn-text">EXPLORE THE METHOD</span>
+            <span class="btn-arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+        <div class="hero-disclaimer-pill" role="note">
+          <span class="pill-icon" aria-hidden="true">⚡</span>
+          <span>Experimental wellness prototype · Not a medical device · No clinical accuracy, diagnosis, blood pressure, or SpO₂</span>
+        </div>
+      </div>
+      <!-- Hero Floating Telemetry Ribbon -->
+      <div class="hero-telemetry-ribbon" aria-hidden="true">
+        <div class="telemetry-pill">
+          <span class="pill-label">ALGORITHM</span>
+          <span class="pill-val">green-evidence-1.1</span>
+        </div>
+        <div class="telemetry-pill">
+          <span class="pill-label">CHEEK PATCHES</span>
+          <span class="pill-val">Bilateral Dual ROI</span>
+        </div>
+        <div class="telemetry-pill">
+          <span class="pill-label">QUALITY TOLERANCE</span>
+          <span class="pill-val">14 Heuristic Gates</span>
+        </div>
+        <div class="telemetry-pill">
+          <span class="pill-label">FRAME INTEGRITY</span>
+          <span class="pill-val">Browser PTS Timestamps</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Signal Lab Workspace -->
+    <section id="lab" class="lab-workspace">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-step">WORKSPACE 01</span>
+          <h2 class="section-heading">Optical Signal Capture & Ingestion</h2>
+        </div>
+        <p class="section-desc">Select a trusted synthetic sample, stream live optical frames via webcam, or ingest local video and trace files.</p>
+      </div>
+
+      <div class="layout-cockpit">
+        <!-- Left: Optical Viewport Station -->
+        <div class="viewport-module panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="panel-dot" aria-hidden="true"></span>
+              <h3 class="panel-title">Optical Viewport Station</h3>
+            </div>
+            <span id="viewportStatusBadge" class="panel-badge">STANDBY</span>
+          </div>
+
+          <!-- Synthetic Sample Switcher -->
+          <div class="input-selection-group">
+            <span class="group-label">PRE-CONFIGURED BENCHMARKS</span>
+            <div class="buttons sample-buttons">
+              <button id="clean" class="btn-sample">
+                <span class="btn-icon">✓</span>
+                <span class="btn-body">
+                  <strong>Clean synthetic sample</strong>
+                  <small>72 BPM · 100% Quality Pass</small>
+                </span>
+              </button>
+              <button id="artifact" class="btn-sample secondary">
+                <span class="btn-icon">⚠</span>
+                <span class="btn-body">
+                  <strong>Artifact sample</strong>
+                  <small>Withheld BPM · 86% Quality</small>
+                </span>
+              </button>
+              <button id="flat" class="btn-sample secondary">
+                <span class="btn-icon">∿</span>
+                <span class="btn-body">
+                  <strong>Flat sample</strong>
+                  <small>Withheld BPM · 64% Quality</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video Capture Viewport -->
+          <div class="capture-stage">
+            <video id="video" muted playsinline></video>
+            <div class="guide" aria-hidden="true">
+              <div class="scan-laser"></div>
+              <div class="roi-container left">
+                <span class="roi left"></span>
+                <span class="roi-bracket top-left"></span>
+                <span class="roi-bracket top-right"></span>
+                <span class="roi-bracket bottom-left"></span>
+                <span class="roi-bracket bottom-right"></span>
+                <span class="roi-tag">CHEEK_L [32%, 48%]</span>
+              </div>
+              <div class="roi-container right">
+                <span class="roi right"></span>
+                <span class="roi-bracket top-left"></span>
+                <span class="roi-bracket top-right"></span>
+                <span class="roi-bracket bottom-left"></span>
+                <span class="roi-bracket bottom-right"></span>
+                <span class="roi-tag">CHEEK_R [56%, 48%]</span>
+              </div>
+              <div class="viewport-crosshair" aria-hidden="true"></div>
+            </div>
+            <div class="viewport-hud-bottom" aria-hidden="true">
+              <span class="hud-item">COLOR CHANNEL: <strong>GREEN (530nm)</strong></span>
+              <span class="hud-item">TARGET: <strong>30.0s @ 30FPS</strong></span>
+            </div>
+          </div>
+
+          <p class="hint align-hint">
+            <strong>Cheek Alignment Aid:</strong> Position both dashed boxes over bare cheek skin below your eyes. This fixed geometric guide is an alignment aid and does not detect faces or track landmarks. Keep your head stationary; avoid direct backlights or filters.
+          </p>
+
+          <!-- Consent & Capture Controls -->
+          <div class="capture-controls-card">
+            <label class="consent">
+              <input id="consent" type="checkbox">
+              <span class="consent-text">I consent to sending derived color traces to this server for analysis. Raw video frames remain strictly inside my local browser memory; traces are never persisted to a database.</span>
+            </label>
+
+            <div class="buttons capture-buttons">
+              <button id="camera" class="secondary">
+                <span class="btn-icon">📷</span> Open camera
+              </button>
+              <button id="record" disabled>
+                <span class="btn-pulse-ring"></span> Capture 30 seconds
+              </button>
+              <button id="stop" class="secondary" disabled>
+                Stop / discard
+              </button>
+            </div>
+          </div>
+
+          <!-- File Ingestion Dropzones -->
+          <div class="ingestion-dropzones">
+            <div class="dropzone-card">
+              <div class="dropzone-header">
+                <span class="dropzone-icon">📼</span>
+                <span class="dropzone-title">Local Video File</span>
+              </div>
+              <label class="file">
+                <span class="file-label-text">Select video file (10–60 s, up to 50 MB)</span>
+                <input id="file" type="file" accept="video/*">
+              </label>
+              <button id="processVideo" class="secondary" disabled>Process selected video</button>
+            </div>
+
+            <div class="dropzone-card">
+              <div class="dropzone-header">
+                <span class="dropzone-icon">📄</span>
+                <span class="dropzone-title">Direct Trace JSON</span>
+              </div>
+              <label class="file">
+                <span class="file-label-text">Load input trace JSON (up to 2 MB)</span>
+                <input id="traceFile" type="file" accept=".json,application/json">
+              </label>
+            </div>
+          </div>
+
+          <!-- Real-Time Status Readout -->
+          <div class="status-ticker-card">
+            <span class="status-label">SYSTEM STATE</span>
+            <p id="status" role="status" aria-live="polite">Ready. No camera is active.</p>
+          </div>
+        </div>
+
+        <!-- Right: Telemetry & Quality HUD -->
+        <div class="telemetry-module panel result">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="panel-dot live" aria-hidden="true"></span>
+              <h3 class="panel-title">Signal Telemetry & Quality Gates</h3>
+            </div>
+            <p id="source" class="eyebrow">NO INPUT YET</p>
+          </div>
+
+          <!-- Primary Metric Cards -->
+          <div class="telemetry-grid">
+            <div class="metric-card bpm-card">
+              <div class="metric-header">
+                <span class="metric-label">ESTIMATED PULSE RATE</span>
+                <span class="metric-badge">OPTICAL rPPG</span>
+              </div>
+              <div class="metric-main">
+                <span id="bpm" class="number">—</span>
+                <span class="unit">experimental BPM</span>
+              </div>
+              <p id="decision" class="metric-decision">Choose an input to begin.</p>
+            </div>
+
+            <div class="metric-card quality-card">
+              <div class="metric-header">
+                <span class="metric-label">QUALITY PASS RATE</span>
+                <span class="metric-badge">14 GATES</span>
+              </div>
+              <div class="metric-main">
+                <span id="quality" class="number small">—</span>
+                <span class="unit">checks passed</span>
+              </div>
+              <p class="hint quality-disclaimer">
+                The score is the fraction of heuristic checks passed, not clinical confidence or heart-rate accuracy.
+              </p>
+            </div>
+          </div>
+
+          <!-- Quick Actions Ribbon -->
+          <div class="buttons export-buttons">
+            <button id="receipt" class="secondary" disabled title="Download calculated session analysis receipt">
+              <span class="btn-icon">⬇</span> Evidence receipt
+            </button>
+            <button id="evidenceCard" class="secondary" disabled title="Download comprehensive judge evidence verification card">
+              <span class="btn-icon">★</span> Judge evidence card
+            </button>
+            <button id="trace" class="secondary" disabled title="Download raw time-series RGB trace">
+              <span class="btn-icon">∿</span> Input trace
+            </button>
+          </div>
+
+          <!-- Guided Retake Section -->
+          <div id="retakeSection" class="retake-section">
+            <div class="retake-header">
+              <span class="retake-icon">⚡</span>
+              <h4 class="retake-title">Guided Retake Analysis</h4>
+            </div>
+            <p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p>
+            <p id="retakeComparison" class="hint retake-comparison-box"></p>
+            <button id="retakeAction" class="secondary" disabled>Retake / capture again</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Signal Analytics Section (Oscilloscope & Periodicity Spectrum) -->
+    <section id="analytics" class="analytics-workspace">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-step">WORKSPACE 02</span>
+          <h2 class="section-heading">Signal Oscilloscope & Spectral Power</h2>
+        </div>
+        <p class="section-desc">Inspect real-time normalized pulse waveforms and frequency spectrum decomposition. Original signal shown in solid mint; challenge overlays rendered in dashed amber.</p>
+      </div>
+
+      <div class="oscilloscope-grid">
+        <!-- Waveform Card -->
+        <div class="scope-card panel">
+          <div class="scope-header">
+            <div class="scope-title-wrap">
+              <span class="scope-beacon mint" aria-hidden="true"></span>
+              <h3 class="scope-title">Pulse-Like Waveform</h3>
+            </div>
+            <span class="scope-meta">Bandpass Filtered (0.75–3.0 Hz)</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="wave" width="900" height="230" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas>
+          </div>
+          <p id="waveLegend" class="axis">Time (seconds) · normalized amplitude (arbitrary units · solid: original, dashed: challenge)</p>
+        </div>
+
+        <!-- Spectrum Card -->
+        <div class="scope-card panel">
+          <div class="scope-header">
+            <div class="scope-title-wrap">
+              <span class="scope-beacon amber" aria-hidden="true"></span>
+              <h3 class="scope-title">Periodicity Spectrum</h3>
+            </div>
+            <span class="scope-meta">FFT Peak & Autocorrelation Search</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="spectrum" width="900" height="180" aria-label="Relative spectral power against beats per minute" role="img"></canvas>
+          </div>
+          <p id="spectrumLegend" class="axis">Frequency equivalent (BPM) · relative spectral power (solid: original, dashed: challenge)</p>
+        </div>
+      </div>
+
+      <!-- Detailed 14 Quality Gates Drawer -->
+      <div class="quality-gates-drawer panel">
+        <details>
+          <summary>
+            <span class="summary-left">
+              <span class="summary-icon">⚙</span>
+              <strong>Inspect All 14 Quality Checks & Gate Tolerances</strong>
+            </span>
+            <span class="summary-tag">EXPAND / COLLAPSE</span>
+          </summary>
+          <div id="checks" class="checks-grid"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Artifact Challenge Lab -->
+    <section id="challenges" class="challenge-workspace">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-step">WORKSPACE 03</span>
+          <h2 class="section-heading">Artifact Challenge Lab — Algorithmic Stress Testing</h2>
+        </div>
+        <p class="section-desc">Run controlled adversarial stress perturbations on an in-memory copy of your trace to test timing continuity, bilateral agreement, and shared ambient lighting susceptibility.</p>
+      </div>
+
+      <div class="challenges-grid">
+        <!-- Challenge A Tile -->
+        <div class="challenge-card panel">
+          <div class="challenge-card-header">
+            <div class="challenge-badge">MODULE A</div>
+            <h4 class="challenge-card-title">Timing Dropout</h4>
+          </div>
+          <p class="challenge-card-desc">Injects an abrupt 0.35 s presentation timestamp gap at sample midpoint to verify that frame timing discontinuities safely trip the continuity gate.</p>
+          <div class="challenge-card-action">
+            <button id="challengeA" class="secondary" disabled>Run Challenge A: Timing dropout</button>
+          </div>
+        </div>
+
+        <!-- Challenge B Tile -->
+        <div class="challenge-card panel">
+          <div class="challenge-card-header">
+            <div class="challenge-badge">MODULE B</div>
+            <h4 class="challenge-card-title">Conflicting Patch</h4>
+          </div>
+          <p class="challenge-card-desc">Injects an asynchronous 1.85 Hz sine perturbation into the right cheek patch to verify bilateral inter-patch discordance gating (limit ≤ 8.0 BPM).</p>
+          <div class="challenge-card-action">
+            <button id="challengeB" class="secondary" disabled>Run Challenge B: Conflicting patch</button>
+          </div>
+        </div>
+
+        <!-- Challenge C Tile -->
+        <div class="challenge-card panel">
+          <div class="challenge-card-header">
+            <div class="challenge-badge highlight">MODULE C</div>
+            <h4 class="challenge-card-title">Shared Periodic Light</h4>
+          </div>
+          <p class="challenge-card-desc">Injects a synchronous 1.2 Hz (72 BPM) illumination oscillation into BOTH cheeks simultaneously. Demonstrates that shared ambient lighting can pass all 14 heuristic checks, proving check passage does not guarantee human pulse.</p>
+          <div class="challenge-card-action">
+            <button id="challengeC" class="secondary" disabled>Run Challenge C: Shared periodic light</button>
+          </div>
+        </div>
+
+        <!-- Hidden Legacy Stress Button for Test Compatibility -->
+        <button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button>
+      </div>
+
+      <!-- Challenge Result Comparison Readout -->
+      <div class="challenge-output-card panel">
+        <span class="output-header-tag">CHALLENGE EXPERIMENT RESULTS & GATES DELTA</span>
+        <p id="comparison" class="comparison-readout">Run an artifact challenge above to compare before-and-after results.</p>
+      </div>
+    </section>
+
+    <!-- Verification Drawer & Gemma 4 Explanation -->
+    <section id="evidence" class="evidence-workspace">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-step">WORKSPACE 04</span>
+          <h2 class="section-heading">AI Interpretation & Verification</h2>
+        </div>
+        <p class="section-desc">Gemma 4 provides secondary experimental commentary on calculated signals. AI never measures pulse, changes numeric data, or provides diagnosis.</p>
+      </div>
+
+      <div class="evidence-grid">
+        <!-- AI Commentary Module -->
+        <div class="ai-commentary-panel panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="panel-dot ai" aria-hidden="true"></span>
+              <h3 class="panel-title">Gemma 4 Commentary Engine</h3>
+            </div>
+            <span class="model-badge">gemma-4-26b-a4b-it</span>
+          </div>
+
+          <div class="ai-controls-wrap">
+            <label class="consent ai-consent-toggle">
+              <input id="aiConsent" type="checkbox">
+              <span class="consent-text">I consent to sending the calculated numerical summary to Google's Gemini API for a Gemma 4 natural language explanation.</span>
+            </label>
+
+            <div class="token-input-group">
+              <label for="token">Demo Authorization Password</label>
+              <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner (server-side authenticated)">
+            </div>
+
+            <button id="explain" disabled class="btn-explain">
+              <span class="btn-icon">✦</span> Explain with Gemma 4
+            </button>
+          </div>
+
+          <div class="explanation-stream-card">
+            <span class="stream-header-tag">AUTHORITATIVE AI COMMENTARY</span>
+            <p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>
+          </div>
+        </div>
+
+        <!-- Session Reset & Integrity Card -->
+        <div class="session-management-panel panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="panel-dot" aria-hidden="true"></span>
+              <h3 class="panel-title">Session Life-Cycle</h3>
+            </div>
+            <span class="session-badge">VOLATILE IN-MEMORY</span>
+          </div>
+          <p class="session-desc">
+            All traces and analysis state reside strictly in local client memory. Resetting the session clears video streams, active traces, AI commentary, and resets camera tracks.
+          </p>
+          <div class="session-actions">
+            <button id="clear" class="btn-clear-session secondary">
+              <span class="btn-icon">↺</span> Clear session
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scientific Method & Transparency Deep Dive -->
+    <section id="method" class="method-workspace panel">
+      <div class="method-inner">
+        <h3 class="method-title">Scientific Principles & Boundary Disclaimers</h3>
+        <div class="method-columns">
+          <div class="method-col">
+            <h4>1. Mathematical GREEN Baseline</h4>
+            <p>HiperPulse extracts raw spatial mean RGB pixel traces from two bilateral cheek regions of interest. By isolating the Green spectral band (~530 nm) where oxygenated hemoglobin absorption produces peak optical photoplethysmographic modulation, subtle skin reflectance fluctuations are isolated over time.</p>
+          </div>
+          <div class="method-col">
+            <h4>2. Strict Multi-Gate Verification</h4>
+            <p>Estimates are gated by 14 deterministic heuristic checks: signal continuity, PTS timing jitter (< 20 ms), exposure range (20–235), clipping fraction (< 5%), bilateral inter-patch discordance (≤ 8 BPM), temporal half-split stability, and dominant spectral power concentration.</p>
+          </div>
+          <div class="method-col">
+            <h4>3. Honest Ethical Limits</h4>
+            <p><strong>Heuristic check passage does not prove biological arterial origin.</strong> Synthetic test fixtures and shared optical lighting easily pass heuristic gates. HiperPulse is an experimental wellness demonstration, not a medical diagnostic device.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Technical Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-symbol">◉</span>
+        <strong>HiperPulse</strong>
+        <span>· The Living Signal Lab</span>
+      </div>
+      <p class="footer-meta">
+        GREEN baseline · Transparent 14-gate verification · Gemma 4 REST commentary · DigitalOcean containerized<br>
+        Skin reflectance, motion, camera auto-exposure, and room lighting impact optical traces. A plausible pulse number is never evidence of clinical accuracy.
+      </p>
+      <div class="footer-links">
+        <a href="#hero">Back to Top ↑</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

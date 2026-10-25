@@ -62,6 +62,27 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Negative Regression Verification:** `TEST_NEGATIVE_TIMEOUT=1` verified to specifically isolate forced timeout on T11 while T01-T10 and T12, T17 pass; parsed and asserted via machine-readable structured summary JSON.
 - **Live Script Verification:** `scripts/verify_gemma_live.py` validates genuine live Gemma 4 explanations and HTTP 401 token enforcement; cooldown logic is authoritatively tested via the 3 deterministic mocked unit tests in `tests/test_audit_remediation.py`.
 
+## Milestone K: Premium Immersive Frontend/UI Redesign (Vizo × Active Theory)
+
+- **Date:** 25 October 2026
+- **Creative Inspiration:** Vizo Dashboard by RonDesignLab (neuro-optical telemetry, dark emerald palette, precision typography) × Active Theory (interactive particle wave simulation, responsive motion, state choreography).
+- **Design System Implementation:**
+  - Complete dark emerald & black palette: `#030907` (void bg), `#071310` (deep bg), `#10251d` (forest surface), `#244d2e` (active emerald), `#3ee89f` / `#8ae8c4` (luminous mint line/glow accents), `#f1cc8b` (amber warning), `#e86b6b` (coral danger).
+  - Open-source typography: Syne (headlines), Instrument Sans (body & labels), IBM Plex Mono (numerals & code).
+  - High-hierarchy modular layout: Viewport Station with laser scan line, corner brackets, and coordinate badges (`CHEEK_L`, `CHEEK_R`); Floating Telemetry Cards (BPM, 100% Quality, Provenance, Decision); High-contrast Oscilloscope and Spectrum; 14 Quality Gate Grid; Guided Retake Delta Lab (`+36 percentage points`); 3 Artifact Challenge Modules (A, B, C); Gemma 4 Commentary Panel.
+- **Visual Capture Evidence:**
+  - `reference/desktop-hero.png` (2,021,160 bytes, 1440x900 hero viewport)
+  - `reference/desktop-dashboard.png` (19,308 bytes, 1440x900 cockpit viewport)
+  - `reference/desktop-full.png` (4,396,471 bytes, full-page desktop render)
+  - `reference/mobile-preview.png` (7,080 bytes, 390x844 mobile viewport)
+  - `reference/mobile-full.png` (2,566,785 bytes, full-page mobile render)
+- **Automated Verification:**
+  - 94 / 94 Python tests passing (`tests/`).
+  - 0 JavaScript syntax errors (`node --check`).
+  - 13 PASS, 4 SKIP in offline browser acceptance test suite (17 / 17 registered).
+  - Negative timeout regression verified (exits 1 on forced T11 timeout).
+
+
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
 - **Date:** 25 October 2026
