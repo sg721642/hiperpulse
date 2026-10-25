@@ -183,4 +183,27 @@
   - Zero required files deleted; zero secrets in Git; clean professional engineering documentation.
 - **Automated Test Totals:** **94 / 94 Python tests passing** in 7.17s; **13 passed, 4 skipped (17 registered/accounted for)** in offline browser acceptance tests (17 / 17 passed when live AI configured and consent granted); structured negative timeout regression verified.
 
+### Milestone K: Winning-Level Immersive Frontend / UI Redesign — VERIFIED
+- **Section A (Design System & Atmosphere):**
+  - Deep dark emerald & black palette: `#030907` (void background), `#071310` (deep surface), `#10251d` (forest panel), `#244d2e` (active emerald), `#3ee89f` / `#8ae8c4` (luminous mint line/glow accents), `#f1cc8b` (amber warning), `#d96b6b` (coral danger).
+  - Open-source typography: Cabinet Grotesk / Syne (editorial headlines), Instrument Sans (body & labels), IBM Plex Mono (numerals & code).
+  - High-hierarchy modular layout: Optical Viewport Station with laser scan sweep, corner brackets, and coordinate badges (`CHEEK_L`, `CHEEK_R`); Floating Telemetry Cards (BPM, 100% Quality, Provenance, Decision); High-contrast Oscilloscope and Spectrum; 14 Quality Gate Grid in collapsible drawer; Guided Retake Delta Lab (`(+36 percentage points)`); 3 Artifact Challenge Modules (A, B, C); Gemma 4 Commentary Panel.
+- **Section B (Interactive Motion & Strict Canvas Invariant Preservation):**
+  - Interactive hero particle simulation with 48 nodes responsive to cursor position, throttled via `requestAnimationFrame` and auto-paused when offscreen or in background tabs.
+  - Oscilloscope waveforms and periodicity spectra rendered with luminous neon accents while strictly preserving canvas spied call invariants: 10 grid calls (5 `moveTo` + 5 `lineTo`) and exact curve point counts (450 vs 455 points for waveform, 150 vs 175 points for spectrum).
+- **Section C (Security & Provenance Integrity):**
+  - Updated Content-Security-Policy in `app/main.py` allowing fonts from Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`) and Fontshare (`api.fontshare.com`, `cdn.fontshare.com`).
+  - Preserved all 38 test-critical DOM selectors, 14 quality gates, and export contracts.
+- **Section D (Visual Capture Evidence):**
+  - `reference/desktop-redesign.png` (1,634,814 bytes, 1440x900 hero viewport)
+  - `reference/desktop-fullpage-redesign.png` (2,604,013 bytes, full-page desktop render)
+  - `reference/mobile-redesign.png` (1,018,485 bytes, 390x844 mobile viewport)
+  - `reference/mobile-fullpage-redesign.png` (2,572,013 bytes, full-page mobile render)
+- **Automated Verification:**
+  - 94 / 94 Python tests passing (`tests/`).
+  - 0 JavaScript syntax errors (`node --check web/app.js` and `node --check scripts/test_browser_acceptance.js`).
+  - 13 PASS, 4 SKIP in offline browser acceptance test suite (17 / 17 registered).
+  - Negative timeout regression verified (exits 1 on forced T11 timeout).
+
+
 

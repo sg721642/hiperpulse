@@ -377,7 +377,7 @@ async def boundaries(request: Request, call_next):
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'no-referrer'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com https://api.fontshare.com; font-src 'self' https://fonts.gstatic.com https://cdn.fontshare.com data:; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=()'
     return response
 
@@ -1129,6 +1129,174 @@ async function main() {
     if (client) await client.close();
     proc.kill('SIGKILL');
     try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+main().catch(err => {
+  console.error('Screenshot capture failed:', err);
+  process.exit(1);
+});
+```
+
+
+## `scripts/capture_ui_screenshots.js`
+
+```javascript
+'use strict';
+const { spawn } = require('child_process');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = 8080;
+const CDP_PORT = 9225;
+const BRAVE_PATH = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function getJson(url) {
+  return new Promise((resolve, reject) => {
+    http.get(url, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+class CDPClient {
+  constructor(wsUrl) {
+    this.wsUrl = wsUrl;
+    this.ws = null;
+    this.id = 1;
+    this.callbacks = new Map();
+  }
+  async connect() {
+    this.ws = new globalThis.WebSocket(this.wsUrl);
+    await new Promise((resolve, reject) => {
+      this.ws.onopen = resolve;
+      this.ws.onerror = reject;
+    });
+    this.ws.onmessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.id && this.callbacks.has(msg.id)) {
+        const { resolve, reject } = this.callbacks.get(msg.id);
+        this.callbacks.delete(msg.id);
+        if (msg.error) reject(new Error(msg.error.message));
+        else resolve(msg.result);
+      }
+    };
+  }
+  send(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = this.id++;
+      this.callbacks.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  async eval(expr) {
+    const res = await this.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+    return res.result?.value;
+  }
+}
+
+async function main() {
+  console.log('Launching headless browser for screenshots...');
+  const tmpProfile = `/tmp/screenshot_profile_${Date.now()}`;
+  const proc = spawn(BRAVE_PATH, [
+    '--headless=new',
+    `--remote-debugging-port=${CDP_PORT}`,
+    `--user-data-dir=${tmpProfile}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-gpu',
+    'about:blank'
+  ]);
+
+  try {
+    let version = null;
+    for (let i = 0; i < 30; i++) {
+      try {
+        version = await getJson(`http://127.0.0.1:${CDP_PORT}/json/version`);
+        if (version) break;
+      } catch (_) {}
+      await sleep(200);
+    }
+    if (!version) throw new Error('Could not connect to browser');
+
+    const targets = await getJson(`http://127.0.0.1:${CDP_PORT}/json/list`);
+    const pageTarget = targets.find(t => t.type === 'page') || targets[0];
+    const client = new CDPClient(pageTarget.webSocketDebuggerUrl);
+    await client.connect();
+
+    await client.send('Page.enable');
+    await client.send('DOM.enable');
+    await client.send('Runtime.enable');
+
+    fs.mkdirSync(path.join(__dirname, '../reference'), { recursive: true });
+
+    // 1. DESKTOP HERO & LAB SCREENSHOT (1440x900)
+    console.log('Capturing Desktop Screenshot...');
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 2,
+      mobile: false
+    });
+
+    await client.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
+    await sleep(2000);
+
+    // Click clean synthetic sample to populate signal and telemetry
+    await client.eval(`$('clean').click();`);
+    await sleep(1500);
+
+    // Capture Desktop Viewport Screenshot
+    const deskRes = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const deskPath = path.join(__dirname, '../reference/desktop-redesign.png');
+    fs.writeFileSync(deskPath, Buffer.from(deskRes.data, 'base64'));
+    console.log(`Saved: ${deskPath} (${(deskRes.data.length * 0.75 / 1024).toFixed(1)} KB)`);
+
+    // Capture Full Page Desktop Screenshot
+    const fullDeskRes = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    const fullDeskPath = path.join(__dirname, '../reference/desktop-fullpage-redesign.png');
+    fs.writeFileSync(fullDeskPath, Buffer.from(fullDeskRes.data, 'base64'));
+    console.log(`Saved: ${fullDeskPath} (${(fullDeskRes.data.length * 0.75 / 1024).toFixed(1)} KB)`);
+
+    // 2. MOBILE SCREENSHOT (390x844 - iPhone 14/15 format)
+    console.log('Capturing Mobile Screenshot...');
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      hasTouch: true
+    });
+
+    await client.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
+    await sleep(2000);
+
+    // Click clean sample on mobile
+    await client.eval(`$('clean').click();`);
+    await sleep(1500);
+
+    const mobRes = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const mobPath = path.join(__dirname, '../reference/mobile-redesign.png');
+    fs.writeFileSync(mobPath, Buffer.from(mobRes.data, 'base64'));
+    console.log(`Saved: ${mobPath} (${(mobRes.data.length * 0.75 / 1024).toFixed(1)} KB)`);
+
+    // Capture Full Page Mobile Screenshot
+    const fullMobRes = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    const fullMobPath = path.join(__dirname, '../reference/mobile-fullpage-redesign.png');
+    fs.writeFileSync(fullMobPath, Buffer.from(fullMobRes.data, 'base64'));
+    console.log(`Saved: ${fullMobPath} (${(fullMobRes.data.length * 0.75 / 1024).toFixed(1)} KB)`);
+
+    console.log('Screenshots captured successfully!');
+  } finally {
+    proc.kill('SIGKILL');
+    try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch (_) {}
   }
 }
 
@@ -4470,10 +4638,7 @@ function controls() {
 function stopMedia() {
   capturing = false; generation++;
   clearTimeout(captureTimer);
-  const stage = document.querySelector('.capture-stage');
-  if (stage) stage.classList.remove('scanning');
-  const badge = $('viewportStatusBadge');
-  if (badge) { badge.textContent = stream ? 'LIVE' : 'STANDBY'; badge.style.color = ''; }
+  const stage = $('captureStage'); if (stage) stage.classList.remove('scanning');
   if (stream) stream.getTracks().forEach(track => track.stop());
   stream = null; video.pause(); video.srcObject = null;
   video.removeAttribute('src'); video.load();
@@ -4510,12 +4675,17 @@ function plot(id, xs, ys, color) {
   if (high-low < 1e-8) {low = -1; high = 1;}
   const x = v => pad+(v-xs[0])/(xs.at(-1)-xs[0] || 1)*(w-2*pad);
   const y = v => h-pad-(v-low)/(high-low)*(h-2*pad);
-  c.strokeStyle='#263c40'; c.lineWidth=1;
+  c.strokeStyle='rgba(111, 146, 138, 0.18)'; c.lineWidth=1;
   for(let i=0;i<=4;i++){const yy=pad+i*(h-2*pad)/4;c.beginPath();c.moveTo(pad,yy);c.lineTo(w-pad,yy);c.stroke();}
-  c.strokeStyle=color; c.lineWidth=2; c.beginPath();
+  c.save();
+  c.strokeStyle=color; c.lineWidth=2;
+  c.shadowColor = color === '#8ae8c4' ? 'rgba(62, 232, 159, 0.5)' : 'rgba(241, 204, 139, 0.5)';
+  c.shadowBlur = 6;
+  c.beginPath();
   ys.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
-  c.fillStyle='#a8bcba'; c.font='15px system-ui';
-  c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
+  c.restore();
+  c.fillStyle='#8da8a4'; c.font='12px "IBM Plex Mono", monospace';
+  c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-60,h-6);
 }
 function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
   const canvas = $(id), c = canvas.getContext('2d');
@@ -4543,7 +4713,7 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
   const x = v => pad + (v - xMin) / xSpan * (w - 2 * pad);
   const y = v => h - pad - (v - low) / ySpan * (h - 2 * pad);
 
-  c.strokeStyle = '#263c40'; c.lineWidth = 1;
+  c.strokeStyle = 'rgba(111, 146, 138, 0.18)'; c.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const yy = pad + i * (h - 2 * pad) / 4;
     c.beginPath(); c.moveTo(pad, yy); c.lineTo(w - pad, yy); c.stroke();
@@ -4551,7 +4721,11 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
 
   // Original curve (solid)
   if (xs1 && ys1 && xs1.length && ys1.length) {
-    c.strokeStyle = color1; c.lineWidth = 2; c.setLineDash([]); c.beginPath();
+    c.save();
+    c.strokeStyle = color1; c.lineWidth = 2; c.setLineDash([]);
+    c.shadowColor = 'rgba(62, 232, 159, 0.5)';
+    c.shadowBlur = 6;
+    c.beginPath();
     const len1 = Math.min(xs1.length, ys1.length);
     let started = false;
     for (let i = 0; i < len1; i++) {
@@ -4563,11 +4737,16 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
       }
     }
     c.stroke();
+    c.restore();
   }
 
   // Challenge curve (dashed)
   if (xs2 && ys2 && xs2.length && ys2.length) {
-    c.strokeStyle = color2; c.lineWidth = 2; c.setLineDash([5, 4]); c.beginPath();
+    c.save();
+    c.strokeStyle = color2; c.lineWidth = 2; c.setLineDash([5, 4]);
+    c.shadowColor = 'rgba(241, 204, 139, 0.5)';
+    c.shadowBlur = 6;
+    c.beginPath();
     const len2 = Math.min(xs2.length, ys2.length);
     let started = false;
     for (let i = 0; i < len2; i++) {
@@ -4579,12 +4758,13 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
       }
     }
     c.stroke();
+    c.restore();
     c.setLineDash([]);
   }
 
-  c.fillStyle = '#a8bcba'; c.font = '15px system-ui';
+  c.fillStyle = '#8da8a4'; c.font = '12px "IBM Plex Mono", monospace';
   c.fillText(xMin.toFixed(1), pad, h - 6);
-  c.fillText(xMax.toFixed(1), w - 70, h - 6);
+  c.fillText(xMax.toFixed(1), w - 60, h - 6);
 }
 function getRetakeAdvice(checks) {
   if (!checks || !checks.length) {
@@ -4636,11 +4816,6 @@ function getRetakeAdvice(checks) {
   return { primary, category, details };
 }
 function render(r) {
-  const badge = $('viewportStatusBadge');
-  if (badge) {
-    badge.textContent = r.bpm !== null ? 'LOCKED' : 'WITHHELD';
-    badge.style.color = r.bpm !== null ? '#3ee89f' : '#f1cc8b';
-  }
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
   const src = r.source || 'unknown';
@@ -4730,8 +4905,6 @@ $('camera').onclick=async()=>{
     const incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}}});
     if(op!==operation){incoming.getTracks().forEach(t=>t.stop());return;}
     stream=incoming;video.srcObject=stream;await video.play();
-    const badge = $('viewportStatusBadge');
-    if (badge) { badge.textContent = 'LIVE'; badge.style.color = '#3ee89f'; }
     status('Align the boxes onto both cheeks. Let exposure settle for five seconds, then capture.');
   }catch(e){stopMedia();status(`Camera unavailable: ${e.message}. You can still use a synthetic sample.`);}
   finally{busy=false;controls();}
@@ -4752,10 +4925,7 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
-  const stage = document.querySelector('.capture-stage');
-  if (stage) stage.classList.add('scanning');
-  const badge = $('viewportStatusBadge');
-  if (badge) { badge.textContent = 'RECORDING'; badge.style.color = '#3ee89f'; }
+  const stage = $('captureStage'); if (stage) stage.classList.add('scanning');
   const ingestion = source==='camera'?'live_capture':(source==='synthetic'?'synthetic_fixture':'local_video');
   const trace={source,ingestion,timestamps:[],left:[],right:[],clipping:[]};let first=null;
   const finish=()=>{if(ticket!==generation)return;stopMedia();runTrace(trace);};
@@ -5025,161 +5195,134 @@ window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();
 
-// Active Theory inspired Interactive Hero Optical Canvas Simulation
-function initHeroSimulation() {
+// Active Theory Inspired Living Signal Simulation (Hero Canvas)
+function initHeroCanvas() {
   const canvas = $('heroCanvas');
-  if (!canvas) return;
+  if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext('2d');
-  let width = 0, height = 0, animationFrame = null, isVisible = true;
-  let mouseX = -1000, mouseY = -1000;
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let width = 0, height = 0;
+  let animId = null;
+  const mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000 };
+  const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const NODES_COUNT = 42;
+  const nodeCount = 48;
   const nodes = [];
 
   function resize() {
-    const rect = canvas.getBoundingClientRect();
-    width = rect.width || window.innerWidth;
-    height = rect.height || (window.innerHeight - 65);
-    canvas.width = Math.floor(width * Math.min(window.devicePixelRatio || 1, 2));
-    canvas.height = Math.floor(height * Math.min(window.devicePixelRatio || 1, 2));
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(canvas.width / width, canvas.height / height);
-  }
-
-  function initNodes() {
-    nodes.length = 0;
-    for (let i = 0; i < NODES_COUNT; i++) {
-      nodes.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        radius: Math.random() * 2 + 1.2,
-        phase: Math.random() * Math.PI * 2,
-        pulseSpeed: 0.02 + Math.random() * 0.03
-      });
-    }
-  }
-
-  function draw() {
-    if (!isVisible || prefersReduced) return;
-    ctx.clearRect(0, 0, width, height);
-
-    // Draw connecting optical laser web
-    ctx.lineWidth = 0.8;
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 115) {
-          const alpha = (1 - dist / 115) * 0.22;
-          ctx.strokeStyle = `rgba(138, 232, 196, ${alpha})`;
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-        }
+    if (!canvas.parentElement) return;
+    width = canvas.width = canvas.parentElement.offsetWidth || window.innerWidth;
+    height = canvas.height = canvas.parentElement.offsetHeight || 600;
+    if (!nodes.length) {
+      for (let i = 0; i < nodeCount; i++) {
+        nodes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          radius: Math.random() * 1.8 + 1.0,
+          phase: Math.random() * Math.PI * 2,
+          pulseSpeed: 0.015 + Math.random() * 0.025
+        });
       }
     }
-
-    // Update and draw nodes
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      n.phase += n.pulseSpeed;
-
-      // Mouse repulsion / parallax
-      const mdx = n.x - mouseX;
-      const mdy = n.y - mouseY;
-      const mdist = Math.hypot(mdx, mdy);
-      if (mdist < 140 && mdist > 0) {
-        const force = (1 - mdist / 140) * 1.6;
-        n.x += (mdx / mdist) * force;
-        n.y += (mdy / mdist) * force;
-      }
-
-      n.x += n.vx;
-      n.y += n.vy;
-
-      if (n.x < 0) n.x = width;
-      else if (n.x > width) n.x = 0;
-      if (n.y < 0) n.y = height;
-      else if (n.y > height) n.y = 0;
-
-      const currentRadius = n.radius + Math.sin(n.phase) * 0.8;
-      ctx.fillStyle = 'rgba(62, 232, 159, 0.75)';
-      ctx.shadowColor = 'rgba(62, 232, 159, 0.5)';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, Math.max(0.6, currentRadius), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-
-    animationFrame = requestAnimationFrame(draw);
   }
 
+  window.addEventListener('resize', resize, { passive: true });
   resize();
-  initNodes();
-  draw();
-
-  window.addEventListener('resize', () => {
-    resize();
-    if (nodes.length === 0) initNodes();
-  });
 
   window.addEventListener('pointermove', e => {
     const rect = canvas.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
-  });
+    mouse.targetX = e.clientX - rect.left;
+    mouse.targetY = e.clientY - rect.top;
+  }, { passive: true });
 
   window.addEventListener('pointerleave', () => {
-    mouseX = -1000;
-    mouseY = -1000;
-  });
+    mouse.targetX = -1000;
+    mouse.targetY = -1000;
+  }, { passive: true });
 
-  if ('IntersectionObserver' in window) {
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          if (!isVisible) {
-            isVisible = true;
-            cancelAnimationFrame(animationFrame);
-            animationFrame = requestAnimationFrame(draw);
-          }
-        } else {
-          isVisible = false;
-          cancelAnimationFrame(animationFrame);
-        }
-      }
-    }, { threshold: 0.05 });
-    observer.observe(canvas);
+  let isVisible = true;
+  if ('IntersectionObserver' in window && canvas.parentElement) {
+    const observer = new IntersectionObserver(([entry]) => {
+      isVisible = entry.isIntersecting;
+      if (isVisible && !animId && !prefersReduced) loop();
+      else if (!isVisible && animId) { cancelAnimationFrame(animId); animId = null; }
+    });
+    observer.observe(canvas.parentElement);
   }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      isVisible = false;
-      cancelAnimationFrame(animationFrame);
-    } else {
-      const hero = $('hero');
-      const rect = hero ? hero.getBoundingClientRect() : null;
-      if (rect && rect.bottom > 0 && rect.top < window.innerHeight) {
-        isVisible = true;
-        cancelAnimationFrame(animationFrame);
-        animationFrame = requestAnimationFrame(draw);
-      }
+      if (animId) { cancelAnimationFrame(animId); animId = null; }
+    } else if (isVisible && !animId && !prefersReduced) {
+      loop();
     }
   });
+
+  function draw() {
+    ctx.clearRect(0, 0, width, height);
+
+    mouse.x += (mouse.targetX - mouse.x) * 0.06;
+    mouse.y += (mouse.targetY - mouse.y) * 0.06;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!prefersReduced) {
+        n.x += n.vx;
+        n.y += n.vy;
+        n.phase += n.pulseSpeed;
+
+        if (n.x < 0) { n.x = 0; n.vx *= -1; }
+        else if (n.x > width) { n.x = width; n.vx *= -1; }
+        if (n.y < 0) { n.y = 0; n.vy *= -1; }
+        else if (n.y > height) { n.y = height; n.vy *= -1; }
+
+        const dx = n.x - mouse.x;
+        const dy = n.y - mouse.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 130 && dist > 0) {
+          const force = (130 - dist) / 130 * 0.6;
+          n.x += (dx / dist) * force;
+          n.y += (dy / dist) * force;
+        }
+      }
+
+      for (let j = i + 1; j < nodes.length; j++) {
+        const n2 = nodes[j];
+        const dist2 = Math.hypot(n.x - n2.x, n.y - n2.y);
+        if (dist2 < 110) {
+          const alpha = (1 - dist2 / 110) * 0.14;
+          ctx.strokeStyle = `rgba(138, 232, 196, ${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(n.x, n.y);
+          ctx.lineTo(n2.x, n2.y);
+          ctx.stroke();
+        }
+      }
+
+      const currentRadius = n.radius + Math.sin(n.phase) * 0.5;
+      ctx.fillStyle = 'rgba(62, 232, 159, 0.75)';
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, Math.max(0.5, currentRadius), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function loop() {
+    if (!isVisible || document.hidden || prefersReduced) return;
+    draw();
+    animId = requestAnimationFrame(loop);
+  }
+
+  if (!prefersReduced) loop();
+  else draw();
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initHeroSimulation);
+  document.addEventListener('DOMContentLoaded', initHeroCanvas);
 } else {
-  initHeroSimulation();
+  initHeroCanvas();
 }
 ```
 
@@ -5192,508 +5335,306 @@ if (document.readyState === 'loading') {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HiperPulse — The Living Signal Lab | Neuro-Optical Pulse Observatory</title>
-  <meta name="description" content="An experimental camera-based pulse signal observatory built around transparent quality checks, honest estimates, and reproducible scientific evidence.">
+  <title>HiperPulse — The Living Signal Lab | Evidence Before Estimates</title>
+  <link rel="preconnect" href="https://api.fontshare.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Syne:wght@700;800&display=swap">
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <!-- Top Navigation Bar -->
-  <header class="site-header">
-    <div class="header-inner">
+
+  <!-- Top Sticky Navigation Bar -->
+  <nav class="site-nav">
+    <div class="nav-container">
       <a class="brand" href="/" aria-label="HiperPulse Home">
-        <span class="brand-symbol" aria-hidden="true">◉</span>
-        <span class="brand-name">HiperPulse</span>
+        <span class="brand-glyph"></span>
+        <span>HiperPulse</span>
       </a>
-      <nav class="nav-links" aria-label="Main Navigation">
-        <a href="#lab" class="nav-link">Signal Lab</a>
-        <a href="#analytics" class="nav-link">Analytics</a>
-        <a href="#challenges" class="nav-link">Stress Lab</a>
-        <a href="#evidence" class="nav-link">Evidence</a>
-        <a href="#method" class="nav-link">Method</a>
-      </nav>
-      <div class="header-meta">
-        <span class="badge" title="Algorithm Baseline"><span class="badge-dot" aria-hidden="true"></span>OBSERVATORY // v1.1</span>
-        <a href="#lab" class="btn-nav-action">Launch Lab</a>
+      <ul class="nav-links">
+        <li><a href="#lab">Signal Lab</a></li>
+        <li><a href="#analytics">Waveform</a></li>
+        <li><a href="#challenges">Artifact Lab</a></li>
+        <li><a href="#evidence">Evidence &amp; AI</a></li>
+        <li><a href="#method">Method</a></li>
+      </ul>
+      <div class="nav-actions">
+        <span class="badge">GREEN v1.1 // EXPERIMENTAL</span>
+        <a href="#lab" class="btn-nav-enter">Launch Cockpit ↓</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Fullscreen Cinematic Hero Section -->
+  <header class="hero-section" id="hero">
+    <canvas id="heroCanvas" class="hero-canvas"></canvas>
+    <div class="hero-grid-ambient"></div>
+    <div class="hero-content">
+      <div class="hero-editorial">
+        <p class="hero-eyebrow">CAMERA SIGNAL OBSERVATORY</p>
+        <h1 class="hero-headline">
+          SEE THE SIGNAL.
+          <span class="highlight">QUESTION THE NOISE.</span>
+        </h1>
+        <p class="hero-summary">
+          An experimental camera-based pulse signal lab built around heuristic quality gates, honest withholding, and reproducible evidence.
+        </p>
+        <div class="hero-disclaimer-pill">
+          <p>Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.</p>
+        </div>
+        <div class="hero-actions">
+          <a href="#lab" class="btn-primary-glow">ENTER SIGNAL LAB</a>
+          <a href="#method" class="btn-secondary-ghost">EXPLORE THE METHOD</a>
+        </div>
+      </div>
+
+      <!-- Floating Telemetry Centerpiece Card -->
+      <div class="hero-centerpiece">
+        <div class="centerpiece-card">
+          <div class="centerpiece-header">
+            <span class="instrument-tag">TELEMETRY PREVIEW</span>
+            <span class="radar-dot"></span>
+          </div>
+          <div class="centerpiece-body">
+            <div class="telemetry-row">
+              <span class="telemetry-label">Algorithm Baseline</span>
+              <span class="telemetry-val highlight">green-evidence-1.1</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Signal Verification</span>
+              <span class="telemetry-val">14 Heuristic Quality Gates</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Bilateral ROI</span>
+              <span class="telemetry-val">Fixed Cheek Alignment [32% / 56%]</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Timestamp Engine</span>
+              <span class="telemetry-val highlight">Hardware PTS Synchronized</span>
+            </div>
+            <div class="centerpiece-waveform-preview" aria-hidden="true">
+              <svg viewBox="0 0 400 60" fill="none" preserveAspectRatio="none">
+                <path d="M0,30 Q40,30 60,25 T90,30 T110,42 T120,8 T130,52 T140,28 T170,30 T200,30 T230,25 T260,30 T280,42 T290,8 T300,52 T310,28 T340,30 T370,30 T400,30" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="centerpiece-footer">
+            <span>OBSERVATORY STATUS: ACTIVE</span>
+            <span>ZERO CLOUD VIDEO STORAGE</span>
+          </div>
+        </div>
       </div>
     </div>
   </header>
 
-  <main id="main-content">
-    <!-- Cinematic Fullscreen Hero -->
-    <section id="hero" class="hero-section">
-      <canvas id="heroCanvas" class="hero-canvas" aria-hidden="true"></canvas>
-      <div class="hero-overlay" aria-hidden="true"></div>
-      <div class="hero-content">
-        <div class="hero-tagline">
-          <span class="eyebrow-badge">NEURO-OPTICAL CAMERA SIGNAL LAB</span>
-          <span class="provenance-tag">GREEN BASELINE · 14 QUALITY GATES</span>
-        </div>
-        <h1 class="hero-title">
-          SEE THE SIGNAL.<br>
-          <span class="hero-title-accent">QUESTION THE NOISE.</span>
-        </h1>
-        <p class="hero-lead">
-          An experimental optical pulse signal laboratory built around multi-gate quality verification, honest estimates, and cryptographic provenance. When noise intrudes, estimates are safely withheld.
-        </p>
-        <div class="hero-actions">
-          <a href="#lab" class="btn-hero-primary">
-            <span class="btn-text">ENTER SIGNAL LAB</span>
-            <span class="btn-arrow" aria-hidden="true">↓</span>
-          </a>
-          <a href="#method" class="btn-hero-secondary">
-            <span class="btn-text">EXPLORE THE METHOD</span>
-            <span class="btn-arrow" aria-hidden="true">→</span>
-          </a>
-        </div>
-        <div class="hero-disclaimer-pill" role="note">
-          <span class="pill-icon" aria-hidden="true">⚡</span>
-          <span>Experimental wellness prototype · Not a medical device · No clinical accuracy, diagnosis, blood pressure, or SpO₂</span>
-        </div>
-      </div>
-      <!-- Hero Floating Telemetry Ribbon -->
-      <div class="hero-telemetry-ribbon" aria-hidden="true">
-        <div class="telemetry-pill">
-          <span class="pill-label">ALGORITHM</span>
-          <span class="pill-val">green-evidence-1.1</span>
-        </div>
-        <div class="telemetry-pill">
-          <span class="pill-label">CHEEK PATCHES</span>
-          <span class="pill-val">Bilateral Dual ROI</span>
-        </div>
-        <div class="telemetry-pill">
-          <span class="pill-label">QUALITY TOLERANCE</span>
-          <span class="pill-val">14 Heuristic Gates</span>
-        </div>
-        <div class="telemetry-pill">
-          <span class="pill-label">FRAME INTEGRITY</span>
-          <span class="pill-val">Browser PTS Timestamps</span>
-        </div>
-      </div>
-    </section>
+  <!-- Main Signal Laboratory Cockpit -->
+  <main class="lab-main" id="lab">
+    <div class="section-anchor-header">
+      <p class="eyebrow">COCKPIT // REAL-TIME EXTRACTION &amp; VERIFICATION</p>
+      <h2 class="section-title">Optical Signal Cockpit</h2>
+      <p class="section-desc">Select a trusted synthetic sample, stream live optical camera data, or import raw JSON traces. All camera frames remain strictly within your browser.</p>
+    </div>
 
-    <!-- Main Signal Lab Workspace -->
-    <section id="lab" class="lab-workspace">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-step">WORKSPACE 01</span>
-          <h2 class="section-heading">Optical Signal Capture & Ingestion</h2>
+    <div class="cockpit-layout layout">
+      <!-- Left Column: Acquisition & Viewport HUD -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2 class="panel-heading">01 / Choose an input</h2>
+          <span class="instrument-tag">INPUT CONTROLS</span>
         </div>
-        <p class="section-desc">Select a trusted synthetic sample, stream live optical frames via webcam, or ingest local video and trace files.</p>
-      </div>
+        <p class="hint">Start with a labelled synthetic signal, or capture 30 seconds in steady light.</p>
 
-      <div class="layout-cockpit">
-        <!-- Left: Optical Viewport Station -->
-        <div class="viewport-module panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <span class="panel-dot" aria-hidden="true"></span>
-              <h3 class="panel-title">Optical Viewport Station</h3>
-            </div>
-            <span id="viewportStatusBadge" class="panel-badge">STANDBY</span>
+        <div class="buttons">
+          <button id="clean">Clean synthetic sample</button>
+          <button id="artifact" class="secondary">Artifact sample</button>
+          <button id="flat" class="secondary">Flat sample</button>
+        </div>
+
+        <div class="capture capture-stage" id="captureStage">
+          <video id="video" muted playsinline></video>
+          <div class="scan-bar"></div>
+          <div class="viewport-hud">
+            <div class="hud-grid"></div>
+            <div class="hud-corner tl"></div>
+            <div class="hud-corner tr"></div>
+            <div class="hud-corner bl"></div>
+            <div class="hud-corner br"></div>
+            <span class="hud-live-tag">OPTICAL FEED</span>
           </div>
-
-          <!-- Synthetic Sample Switcher -->
-          <div class="input-selection-group">
-            <span class="group-label">PRE-CONFIGURED BENCHMARKS</span>
-            <div class="buttons sample-buttons">
-              <button id="clean" class="btn-sample">
-                <span class="btn-icon">✓</span>
-                <span class="btn-body">
-                  <strong>Clean synthetic sample</strong>
-                  <small>72 BPM · 100% Quality Pass</small>
-                </span>
-              </button>
-              <button id="artifact" class="btn-sample secondary">
-                <span class="btn-icon">⚠</span>
-                <span class="btn-body">
-                  <strong>Artifact sample</strong>
-                  <small>Withheld BPM · 86% Quality</small>
-                </span>
-              </button>
-              <button id="flat" class="btn-sample secondary">
-                <span class="btn-icon">∿</span>
-                <span class="btn-body">
-                  <strong>Flat sample</strong>
-                  <small>Withheld BPM · 64% Quality</small>
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Video Capture Viewport -->
-          <div class="capture-stage">
-            <video id="video" muted playsinline></video>
-            <div class="guide" aria-hidden="true">
-              <div class="scan-laser"></div>
-              <div class="roi-container left">
-                <span class="roi left"></span>
-                <span class="roi-bracket top-left"></span>
-                <span class="roi-bracket top-right"></span>
-                <span class="roi-bracket bottom-left"></span>
-                <span class="roi-bracket bottom-right"></span>
-                <span class="roi-tag">CHEEK_L [32%, 48%]</span>
-              </div>
-              <div class="roi-container right">
-                <span class="roi right"></span>
-                <span class="roi-bracket top-left"></span>
-                <span class="roi-bracket top-right"></span>
-                <span class="roi-bracket bottom-left"></span>
-                <span class="roi-bracket bottom-right"></span>
-                <span class="roi-tag">CHEEK_R [56%, 48%]</span>
-              </div>
-              <div class="viewport-crosshair" aria-hidden="true"></div>
-            </div>
-            <div class="viewport-hud-bottom" aria-hidden="true">
-              <span class="hud-item">COLOR CHANNEL: <strong>GREEN (530nm)</strong></span>
-              <span class="hud-item">TARGET: <strong>30.0s @ 30FPS</strong></span>
-            </div>
-          </div>
-
-          <p class="hint align-hint">
-            <strong>Cheek Alignment Aid:</strong> Position both dashed boxes over bare cheek skin below your eyes. This fixed geometric guide is an alignment aid and does not detect faces or track landmarks. Keep your head stationary; avoid direct backlights or filters.
-          </p>
-
-          <!-- Consent & Capture Controls -->
-          <div class="capture-controls-card">
-            <label class="consent">
-              <input id="consent" type="checkbox">
-              <span class="consent-text">I consent to sending derived color traces to this server for analysis. Raw video frames remain strictly inside my local browser memory; traces are never persisted to a database.</span>
-            </label>
-
-            <div class="buttons capture-buttons">
-              <button id="camera" class="secondary">
-                <span class="btn-icon">📷</span> Open camera
-              </button>
-              <button id="record" disabled>
-                <span class="btn-pulse-ring"></span> Capture 30 seconds
-              </button>
-              <button id="stop" class="secondary" disabled>
-                Stop / discard
-              </button>
-            </div>
-          </div>
-
-          <!-- File Ingestion Dropzones -->
-          <div class="ingestion-dropzones">
-            <div class="dropzone-card">
-              <div class="dropzone-header">
-                <span class="dropzone-icon">📼</span>
-                <span class="dropzone-title">Local Video File</span>
-              </div>
-              <label class="file">
-                <span class="file-label-text">Select video file (10–60 s, up to 50 MB)</span>
-                <input id="file" type="file" accept="video/*">
-              </label>
-              <button id="processVideo" class="secondary" disabled>Process selected video</button>
-            </div>
-
-            <div class="dropzone-card">
-              <div class="dropzone-header">
-                <span class="dropzone-icon">📄</span>
-                <span class="dropzone-title">Direct Trace JSON</span>
-              </div>
-              <label class="file">
-                <span class="file-label-text">Load input trace JSON (up to 2 MB)</span>
-                <input id="traceFile" type="file" accept=".json,application/json">
-              </label>
-            </div>
-          </div>
-
-          <!-- Real-Time Status Readout -->
-          <div class="status-ticker-card">
-            <span class="status-label">SYSTEM STATE</span>
-            <p id="status" role="status" aria-live="polite">Ready. No camera is active.</p>
+          <div class="guide" aria-hidden="true">
+            <span class="roi left"><span class="roi-label">CHEEK_L</span></span>
+            <span class="roi right"><span class="roi-label">CHEEK_R</span></span>
           </div>
         </div>
 
-        <!-- Right: Telemetry & Quality HUD -->
-        <div class="telemetry-module panel result">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <span class="panel-dot live" aria-hidden="true"></span>
-              <h3 class="panel-title">Signal Telemetry & Quality Gates</h3>
-            </div>
-            <p id="source" class="eyebrow">NO INPUT YET</p>
+        <p class="hint">For camera/video: place the two boxes on bare cheek skin, below the eyes. This fixed guide does not detect faces or track movement. Keep your face still; no filters, flashlight, or digital zoom.</p>
+
+        <label class="consent">
+          <input id="consent" type="checkbox">
+          <span>I consent to sending derived color traces to this server for analysis. Video frames remain in my browser; the app does not persist traces.</span>
+        </label>
+
+        <div class="buttons">
+          <button id="camera" class="secondary">Open camera</button>
+          <button id="record" disabled>Capture 30 seconds</button>
+          <button id="stop" class="secondary" disabled>Stop / discard</button>
+        </div>
+
+        <label class="file">
+          Choose local video (10–60 s, up to 50 MB)
+          <input id="file" type="file" accept="video/*">
+        </label>
+        <button id="processVideo" class="secondary" disabled>Process selected video</button>
+
+        <label class="file">
+          Or load a trace JSON (up to 2 MB)
+          <input id="traceFile" type="file" accept=".json,application/json">
+        </label>
+
+        <p id="status" role="status" aria-live="polite">Ready. No camera is active.</p>
+      </section>
+
+      <!-- Right Column: Telemetry & Quality HUD -->
+      <section class="panel result">
+        <div class="panel-header">
+          <h2 class="panel-heading">02 / Inspect the evidence</h2>
+          <p id="source" class="eyebrow">NO INPUT YET</p>
+        </div>
+
+        <div class="metrics">
+          <div>
+            <span id="bpm" class="number">—</span>
+            <span class="unit">experimental BPM</span>
           </div>
-
-          <!-- Primary Metric Cards -->
-          <div class="telemetry-grid">
-            <div class="metric-card bpm-card">
-              <div class="metric-header">
-                <span class="metric-label">ESTIMATED PULSE RATE</span>
-                <span class="metric-badge">OPTICAL rPPG</span>
-              </div>
-              <div class="metric-main">
-                <span id="bpm" class="number">—</span>
-                <span class="unit">experimental BPM</span>
-              </div>
-              <p id="decision" class="metric-decision">Choose an input to begin.</p>
-            </div>
-
-            <div class="metric-card quality-card">
-              <div class="metric-header">
-                <span class="metric-label">QUALITY PASS RATE</span>
-                <span class="metric-badge">14 GATES</span>
-              </div>
-              <div class="metric-main">
-                <span id="quality" class="number small">—</span>
-                <span class="unit">checks passed</span>
-              </div>
-              <p class="hint quality-disclaimer">
-                The score is the fraction of heuristic checks passed, not clinical confidence or heart-rate accuracy.
-              </p>
-            </div>
-          </div>
-
-          <!-- Quick Actions Ribbon -->
-          <div class="buttons export-buttons">
-            <button id="receipt" class="secondary" disabled title="Download calculated session analysis receipt">
-              <span class="btn-icon">⬇</span> Evidence receipt
-            </button>
-            <button id="evidenceCard" class="secondary" disabled title="Download comprehensive judge evidence verification card">
-              <span class="btn-icon">★</span> Judge evidence card
-            </button>
-            <button id="trace" class="secondary" disabled title="Download raw time-series RGB trace">
-              <span class="btn-icon">∿</span> Input trace
-            </button>
-          </div>
-
-          <!-- Guided Retake Section -->
-          <div id="retakeSection" class="retake-section">
-            <div class="retake-header">
-              <span class="retake-icon">⚡</span>
-              <h4 class="retake-title">Guided Retake Analysis</h4>
-            </div>
-            <p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p>
-            <p id="retakeComparison" class="hint retake-comparison-box"></p>
-            <button id="retakeAction" class="secondary" disabled>Retake / capture again</button>
+          <div>
+            <span id="quality" class="number small">—</span>
+            <span class="unit">checks passed</span>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Signal Analytics Section (Oscilloscope & Periodicity Spectrum) -->
-    <section id="analytics" class="analytics-workspace">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-step">WORKSPACE 02</span>
-          <h2 class="section-heading">Signal Oscilloscope & Spectral Power</h2>
-        </div>
-        <p class="section-desc">Inspect real-time normalized pulse waveforms and frequency spectrum decomposition. Original signal shown in solid mint; challenge overlays rendered in dashed amber.</p>
-      </div>
+        <p id="decision">Choose an input to begin.</p>
+        <p class="hint">The score is the fraction of heuristic checks passed, not confidence or accuracy. Shared lighting artifacts can pass every check.</p>
 
-      <div class="oscilloscope-grid">
-        <!-- Waveform Card -->
-        <div class="scope-card panel">
-          <div class="scope-header">
-            <div class="scope-title-wrap">
-              <span class="scope-beacon mint" aria-hidden="true"></span>
-              <h3 class="scope-title">Pulse-Like Waveform</h3>
-            </div>
-            <span class="scope-meta">Bandpass Filtered (0.75–3.0 Hz)</span>
+        <!-- Waveform Plot -->
+        <div class="plot-group" id="analytics">
+          <div class="plot-header">
+            <h3>Pulse-like waveform</h3>
+            <span class="instrument-tag">NORMALIZED rPPG</span>
           </div>
-          <div class="canvas-wrap">
-            <canvas id="wave" width="900" height="230" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas>
+          <div class="canvas-frame">
+            <canvas id="wave" width="900" height="210" aria-label="Normalized pulse-like waveform against seconds" role="img"></canvas>
           </div>
           <p id="waveLegend" class="axis">Time (seconds) · normalized amplitude (arbitrary units · solid: original, dashed: challenge)</p>
         </div>
 
-        <!-- Spectrum Card -->
-        <div class="scope-card panel">
-          <div class="scope-header">
-            <div class="scope-title-wrap">
-              <span class="scope-beacon amber" aria-hidden="true"></span>
-              <h3 class="scope-title">Periodicity Spectrum</h3>
-            </div>
-            <span class="scope-meta">FFT Peak & Autocorrelation Search</span>
+        <!-- Spectrum Plot -->
+        <div class="plot-group">
+          <div class="plot-header">
+            <h3>Periodicity spectrum</h3>
+            <span class="instrument-tag">FFT DENSITY</span>
           </div>
-          <div class="canvas-wrap">
-            <canvas id="spectrum" width="900" height="180" aria-label="Relative spectral power against beats per minute" role="img"></canvas>
+          <div class="canvas-frame">
+            <canvas id="spectrum" width="900" height="160" aria-label="Relative spectral power against beats per minute" role="img"></canvas>
           </div>
           <p id="spectrumLegend" class="axis">Frequency equivalent (BPM) · relative spectral power (solid: original, dashed: challenge)</p>
         </div>
-      </div>
 
-      <!-- Detailed 14 Quality Gates Drawer -->
-      <div class="quality-gates-drawer panel">
+        <!-- 14 Quality Checks -->
         <details>
-          <summary>
-            <span class="summary-left">
-              <span class="summary-icon">⚙</span>
-              <strong>Inspect All 14 Quality Checks & Gate Tolerances</strong>
-            </span>
-            <span class="summary-tag">EXPAND / COLLAPSE</span>
-          </summary>
-          <div id="checks" class="checks-grid"></div>
+          <summary>View quality checks and retake guidance</summary>
+          <div id="checks"></div>
         </details>
+
+        <!-- Guided Retake Section -->
+        <div id="retakeSection" class="retake-section">
+          <h3>Guided retake analysis</h3>
+          <p id="retakeAdvice" class="hint">No retake needed or no input analyzed yet.</p>
+          <p id="retakeComparison" class="hint" style="white-space:pre-wrap;"></p>
+          <button id="retakeAction" class="secondary" disabled>Retake / capture again</button>
+        </div>
+
+        <!-- Evidence Receipts Download Buttons -->
+        <div class="buttons">
+          <button id="receipt" class="secondary" disabled>Download evidence receipt</button>
+          <button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button>
+          <button id="trace" class="secondary" disabled>Download input trace</button>
+        </div>
+
+        <!-- Artifact Challenge Lab -->
+        <div class="challenge-card" id="challenges">
+          <h3>Artifact challenge lab</h3>
+          <p class="hint">Compare this trace with controlled algorithmic stress tests on an in-memory copy. Tests continuity, bilateral agreement, and shared ambient lighting artifacts.</p>
+          <div class="buttons">
+            <button id="challengeA" class="secondary" disabled>Challenge A: Timing dropout</button>
+            <button id="challengeB" class="secondary" disabled>Challenge B: Conflicting patch</button>
+            <button id="challengeC" class="secondary" disabled>Challenge C: Shared periodic light</button>
+            <button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button>
+          </div>
+          <p id="comparison"></p>
+        </div>
+
+        <!-- Gemma 4 Scientific Commentary -->
+        <div class="ai-section" id="evidence">
+          <h3>03 / Explain the session</h3>
+          <label class="consent">
+            <input id="aiConsent" type="checkbox">
+            <span>Send the calculated summary to Google's Gemini API for a Gemma 4 explanation.</span>
+          </label>
+          <label>
+            Demo password
+            <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner">
+          </label>
+          <button id="explain" disabled>Explain with Gemma 4</button>
+          <p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>
+        </div>
+
+        <!-- Clear Session -->
+        <div style="margin-top: 24px;">
+          <button id="clear" class="secondary">Clear session</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Scientific Method & Disclaimers Section -->
+    <section class="method-section" id="method">
+      <div class="section-anchor-header">
+        <p class="eyebrow">SCIENTIFIC FOUNDATION // TRANSPARENCY</p>
+        <h2 class="section-title">The GREEN Baseline Pipeline</h2>
+        <p class="section-desc">How HiperPulse extracts optical signals, tests verification gates, and honestly withholds uncertain estimates.</p>
       </div>
-    </section>
-
-    <!-- Artifact Challenge Lab -->
-    <section id="challenges" class="challenge-workspace">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-step">WORKSPACE 03</span>
-          <h2 class="section-heading">Artifact Challenge Lab — Algorithmic Stress Testing</h2>
+      <div class="method-grid">
+        <div class="method-step-card">
+          <span class="method-step-num">STAGE 01</span>
+          <h4 class="method-step-title">Dual Cheek Patches</h4>
+          <p class="method-step-desc">Fixed guide boxes extract spatial green-channel mean intensities from left and right cheek skin, minimizing specular reflection and micro-motion.</p>
         </div>
-        <p class="section-desc">Run controlled adversarial stress perturbations on an in-memory copy of your trace to test timing continuity, bilateral agreement, and shared ambient lighting susceptibility.</p>
-      </div>
-
-      <div class="challenges-grid">
-        <!-- Challenge A Tile -->
-        <div class="challenge-card panel">
-          <div class="challenge-card-header">
-            <div class="challenge-badge">MODULE A</div>
-            <h4 class="challenge-card-title">Timing Dropout</h4>
-          </div>
-          <p class="challenge-card-desc">Injects an abrupt 0.35 s presentation timestamp gap at sample midpoint to verify that frame timing discontinuities safely trip the continuity gate.</p>
-          <div class="challenge-card-action">
-            <button id="challengeA" class="secondary" disabled>Run Challenge A: Timing dropout</button>
-          </div>
+        <div class="method-step-card">
+          <span class="method-step-num">STAGE 02</span>
+          <h4 class="method-step-title">Signal Detrending &amp; Filter</h4>
+          <p class="method-step-desc">A 4th-order Butterworth bandpass filter (0.75–3.0 Hz / 45–180 BPM) attenuates low-frequency baseline drifts and high-frequency sensor noise.</p>
         </div>
-
-        <!-- Challenge B Tile -->
-        <div class="challenge-card panel">
-          <div class="challenge-card-header">
-            <div class="challenge-badge">MODULE B</div>
-            <h4 class="challenge-card-title">Conflicting Patch</h4>
-          </div>
-          <p class="challenge-card-desc">Injects an asynchronous 1.85 Hz sine perturbation into the right cheek patch to verify bilateral inter-patch discordance gating (limit ≤ 8.0 BPM).</p>
-          <div class="challenge-card-action">
-            <button id="challengeB" class="secondary" disabled>Run Challenge B: Conflicting patch</button>
-          </div>
+        <div class="method-step-card">
+          <span class="method-step-num">STAGE 03</span>
+          <h4 class="method-step-title">FFT &amp; Autocorrelation</h4>
+          <p class="method-step-desc">Dual independent peak estimators (spectral density peak + temporal lag autocorrelation) must agree within 8.0 BPM to ensure fundamental periodicity.</p>
         </div>
-
-        <!-- Challenge C Tile -->
-        <div class="challenge-card panel">
-          <div class="challenge-card-header">
-            <div class="challenge-badge highlight">MODULE C</div>
-            <h4 class="challenge-card-title">Shared Periodic Light</h4>
-          </div>
-          <p class="challenge-card-desc">Injects a synchronous 1.2 Hz (72 BPM) illumination oscillation into BOTH cheeks simultaneously. Demonstrates that shared ambient lighting can pass all 14 heuristic checks, proving check passage does not guarantee human pulse.</p>
-          <div class="challenge-card-action">
-            <button id="challengeC" class="secondary" disabled>Run Challenge C: Shared periodic light</button>
-          </div>
-        </div>
-
-        <!-- Hidden Legacy Stress Button for Test Compatibility -->
-        <button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button>
-      </div>
-
-      <!-- Challenge Result Comparison Readout -->
-      <div class="challenge-output-card panel">
-        <span class="output-header-tag">CHALLENGE EXPERIMENT RESULTS & GATES DELTA</span>
-        <p id="comparison" class="comparison-readout">Run an artifact challenge above to compare before-and-after results.</p>
-      </div>
-    </section>
-
-    <!-- Verification Drawer & Gemma 4 Explanation -->
-    <section id="evidence" class="evidence-workspace">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-step">WORKSPACE 04</span>
-          <h2 class="section-heading">AI Interpretation & Verification</h2>
-        </div>
-        <p class="section-desc">Gemma 4 provides secondary experimental commentary on calculated signals. AI never measures pulse, changes numeric data, or provides diagnosis.</p>
-      </div>
-
-      <div class="evidence-grid">
-        <!-- AI Commentary Module -->
-        <div class="ai-commentary-panel panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <span class="panel-dot ai" aria-hidden="true"></span>
-              <h3 class="panel-title">Gemma 4 Commentary Engine</h3>
-            </div>
-            <span class="model-badge">gemma-4-26b-a4b-it</span>
-          </div>
-
-          <div class="ai-controls-wrap">
-            <label class="consent ai-consent-toggle">
-              <input id="aiConsent" type="checkbox">
-              <span class="consent-text">I consent to sending the calculated numerical summary to Google's Gemini API for a Gemma 4 natural language explanation.</span>
-            </label>
-
-            <div class="token-input-group">
-              <label for="token">Demo Authorization Password</label>
-              <input id="token" type="password" autocomplete="off" placeholder="Provided by demo owner (server-side authenticated)">
-            </div>
-
-            <button id="explain" disabled class="btn-explain">
-              <span class="btn-icon">✦</span> Explain with Gemma 4
-            </button>
-          </div>
-
-          <div class="explanation-stream-card">
-            <span class="stream-header-tag">AUTHORITATIVE AI COMMENTARY</span>
-            <p id="explanation" aria-live="polite">The signal calculation works without an AI key.</p>
-          </div>
-        </div>
-
-        <!-- Session Reset & Integrity Card -->
-        <div class="session-management-panel panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <span class="panel-dot" aria-hidden="true"></span>
-              <h3 class="panel-title">Session Life-Cycle</h3>
-            </div>
-            <span class="session-badge">VOLATILE IN-MEMORY</span>
-          </div>
-          <p class="session-desc">
-            All traces and analysis state reside strictly in local client memory. Resetting the session clears video streams, active traces, AI commentary, and resets camera tracks.
-          </p>
-          <div class="session-actions">
-            <button id="clear" class="btn-clear-session secondary">
-              <span class="btn-icon">↺</span> Clear session
-            </button>
-          </div>
+        <div class="method-step-card">
+          <span class="method-step-num">STAGE 04</span>
+          <h4 class="method-step-title">14 Heuristic Quality Gates</h4>
+          <p class="method-step-desc">Every candidate signal is scrutinized across lighting, timing, bilateral agreement, SNR, and stability. Any single failure forces an honest null BPM.</p>
         </div>
       </div>
     </section>
 
-    <!-- Scientific Method & Transparency Deep Dive -->
-    <section id="method" class="method-workspace panel">
-      <div class="method-inner">
-        <h3 class="method-title">Scientific Principles & Boundary Disclaimers</h3>
-        <div class="method-columns">
-          <div class="method-col">
-            <h4>1. Mathematical GREEN Baseline</h4>
-            <p>HiperPulse extracts raw spatial mean RGB pixel traces from two bilateral cheek regions of interest. By isolating the Green spectral band (~530 nm) where oxygenated hemoglobin absorption produces peak optical photoplethysmographic modulation, subtle skin reflectance fluctuations are isolated over time.</p>
-          </div>
-          <div class="method-col">
-            <h4>2. Strict Multi-Gate Verification</h4>
-            <p>Estimates are gated by 14 deterministic heuristic checks: signal continuity, PTS timing jitter (< 20 ms), exposure range (20–235), clipping fraction (< 5%), bilateral inter-patch discordance (≤ 8 BPM), temporal half-split stability, and dominant spectral power concentration.</p>
-          </div>
-          <div class="method-col">
-            <h4>3. Honest Ethical Limits</h4>
-            <p><strong>Heuristic check passage does not prove biological arterial origin.</strong> Synthetic test fixtures and shared optical lighting easily pass heuristic gates. HiperPulse is an experimental wellness demonstration, not a medical diagnostic device.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+    <!-- Site Footer -->
+    <footer>
+      <div>GREEN baseline · transparent quality checks · Gemma 4 explanations · DigitalOcean-ready</div>
+      <div>Lighting, movement, skin reflectance, exposure and camera processing affect results. A plausible number is not evidence of clinical accuracy.</div>
+    </footer>
   </main>
 
-  <!-- Technical Footer -->
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <span class="footer-symbol">◉</span>
-        <strong>HiperPulse</strong>
-        <span>· The Living Signal Lab</span>
-      </div>
-      <p class="footer-meta">
-        GREEN baseline · Transparent 14-gate verification · Gemma 4 REST commentary · DigitalOcean containerized<br>
-        Skin reflectance, motion, camera auto-exposure, and room lighting impact optical traces. A plausible pulse number is never evidence of clinical accuracy.
-      </p>
-      <div class="footer-links">
-        <a href="#hero">Back to Top ↑</a>
-      </div>
-    </div>
-  </footer>
 </body>
 </html>
 ```
@@ -5703,247 +5644,280 @@ if (document.readyState === 'loading') {
 
 ```css
 /* ==========================================================================
-   HIPERPULSE — THE LIVING SIGNAL LAB
-   Neuro-Optical Pulse Observatory Design System
-   Creative Direction: Vizo Dashboard (RonDesignLab) × Active Theory
+   HIPERPULSE — PREMIUM IMMERSIVE DESIGN SYSTEM ("THE LIVING SIGNAL LAB")
+   Creative References:
+     • Vizo Dashboard (RonDesignLab): Neuro-optical emerald palette, floating telemetry, precision instruments
+     • Active Theory: Living real-time motion, optical particles, depth, smooth choreography
+     • DigitalOcean: Clean information hierarchy, trustworthiness, polished product interactions
    ========================================================================== */
 
+/* --- 1. DESIGN TOKENS & SYSTEM VARIABLES --- */
 :root {
   color-scheme: dark;
 
-  /* Palette */
+  /* Primary Palette (Custom Dark Emerald & Forest Obsidian) */
   --bg-void: #030907;
   --bg-deep: #071310;
+  --bg-surface: #0a1b16;
   --surface-forest: #10251d;
-  --surface-emerald: #163828;
-  --surface-card: rgba(16, 37, 29, 0.76);
-  --surface-card-hover: rgba(22, 56, 40, 0.88);
-  --surface-card-inner: rgba(7, 19, 16, 0.72);
+  --surface-card: #0d211a;
+  --surface-elevated: #132d23;
+  --surface-hover: #17382c;
 
-  --accent-emerald: #244d2e;
+  /* Accent & Instrument Signals */
+  --emerald-active: #244d2e;
   --sage-deep: #546f4c;
   --sage-soft: #86976c;
   --jade-muted: #6f928a;
-  --silver-pale: #dbdfdd;
-  --text-white: #eef2ed;
-  --text-dim: #9eb6b0;
-  --text-muted: #6f8e87;
+  --mint-luminous: #3ee89f;
+  --mint-glow: #8ae8c4;
+  --mint-soft: rgba(138, 232, 196, 0.12);
 
-  /* Luminous Accents */
-  --mint-glow: #3ee89f;
-  --mint-line: #8ae8c4;
-  --mint-faint: rgba(62, 232, 159, 0.08);
-  --mint-glass: rgba(138, 232, 196, 0.12);
-
-  /* Status Accents */
+  /* Status Accents (Restrained & Meaningful) */
   --amber-warning: #f1cc8b;
-  --amber-bright: #ffba42;
-  --amber-faint: rgba(241, 204, 139, 0.12);
-  --coral-danger: #e86b6b;
-  --coral-faint: rgba(232, 107, 107, 0.12);
+  --amber-soft: rgba(241, 204, 139, 0.15);
+  --coral-fail: #d96b6b;
+  --coral-soft: rgba(217, 107, 107, 0.15);
 
-  /* Borders & Lines */
-  --border-line: rgba(111, 146, 138, 0.22);
-  --border-active: rgba(138, 232, 196, 0.42);
-  --border-faint: rgba(111, 146, 138, 0.12);
-  --grid-line: rgba(111, 146, 138, 0.05);
+  /* Typography Colors */
+  --text-white: #eef2ed;
+  --text-primary: #e5eeec;
+  --text-secondary: #a8bcba;
+  --text-muted: #6f8f8b;
+  --text-dim: #44615d;
+  --silver-pale: #dbdfdd;
 
-  /* Typography */
-  --font-display: 'Syne', system-ui, -apple-system, sans-serif;
-  --font-sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', SFMono-Regular, Menlo, monospace;
+  /* Structural Borders & Lines */
+  --border-line: rgba(111, 146, 138, 0.18);
+  --border-active: rgba(138, 232, 196, 0.35);
+  --border-subtle: rgba(255, 255, 255, 0.06);
 
-  /* Layout */
-  --max-w: 1380px;
-  --radius-lg: 18px;
-  --radius-md: 12px;
+  /* Typography Stack */
+  --font-display: 'Cabinet Grotesk', 'Syne', system-ui, -apple-system, sans-serif;
+  --font-body: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, Menlo, monospace;
+
+  /* Lighting & Shadows */
+  --glow-emerald: 0 0 32px rgba(62, 232, 159, 0.15);
+  --glow-subtle: 0 4px 20px rgba(0, 0, 0, 0.6);
+  --glow-card: 0 12px 36px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+
+  /* Layout Constants */
+  --nav-height: 72px;
+  --max-width: 1400px;
   --radius-sm: 8px;
-  --radius-full: 9999px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 9999px;
 
-  /* Elevation */
-  --glow-emerald: 0 0 28px rgba(62, 232, 159, 0.16);
-  --glow-subtle: 0 12px 36px rgba(0, 0, 0, 0.45);
+  /* Animation Timings */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --trans-fast: 0.18s var(--ease-smooth);
+  --trans-normal: 0.32s var(--ease-out-expo);
+  --trans-slow: 0.6s var(--ease-out-expo);
 }
 
-/* Base Reset & Background */
+/* --- 2. BASE STYLES & RESET --- */
 *, *::before, *::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 html {
-  scroll-behavior: smooth;
   background-color: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: 16px;
+  line-height: 1.6;
+  scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg-void);
-  color: var(--text-white);
-  font-family: var(--font-sans);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(36, 77, 46, 0.28) 0%, transparent 60%),
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  min-height: 100vh;
+  background-color: var(--bg-void);
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(36, 77, 46, 0.28), transparent 75%),
+    linear-gradient(rgba(111, 146, 138, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(111, 146, 138, 0.035) 1px, transparent 1px);
   background-size: 100% 100%, 48px 48px, 48px 48px;
-  background-position: top center, 0 0, 0 0;
+  background-position: 0 0, -1px -1px, -1px -1px;
+  background-attachment: fixed;
+  color: var(--text-primary);
+  overflow-x: hidden;
+  position: relative;
 }
 
-/* Links & Typography */
-a {
-  color: var(--mint-line);
-  text-decoration: none;
-  transition: color 0.2s ease;
+/* Subtle scanline atmosphere overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.18) 3px,
+    rgba(0, 0, 0, 0.18) 4px
+  );
+  opacity: 0.45;
+  z-index: 999;
 }
 
-a:hover {
-  color: var(--mint-glow);
-}
-
-h1, h2, h3, h4, h5 {
-  color: var(--text-white);
-  font-family: var(--font-display);
-  font-weight: 700;
-  line-height: 1.2;
-  margin: 0;
-}
-
-p {
-  margin: 0 0 1rem;
-  color: var(--text-dim);
-}
-
-/* ==========================================================================
-   Header Navigation Bar
-   ========================================================================== */
-
-.site-header {
+/* --- 3. TOP NAVIGATION (DIGITALOCEAN / VIZO HYBRID) --- */
+.site-nav {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(3, 9, 7, 0.78);
+  height: var(--nav-height);
+  background: rgba(3, 9, 7, 0.82);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-faint);
-  transition: border-color 0.3s ease;
+  border-bottom: 1px solid var(--border-line);
 }
 
-.header-inner {
-  max-width: var(--max-w);
+.nav-container {
+  max-width: var(--max-width);
   margin: 0 auto;
-  padding: 14px 24px;
+  height: 100%;
+  padding: 0 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
 }
 
 .brand {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  text-decoration: none;
   color: var(--text-white);
   font-family: var(--font-display);
-  font-size: 1.35rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  transition: opacity var(--trans-fast);
 }
 
-.brand-symbol {
-  color: var(--mint-glow);
-  font-size: 1.15rem;
-  text-shadow: 0 0 12px var(--mint-glow);
-  animation: pulseBeacon 2.6s infinite ease-in-out;
+.brand:hover {
+  opacity: 0.9;
+}
+
+.brand-glyph {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  background: var(--mint-luminous);
+  border-radius: 50%;
+  box-shadow: 0 0 14px var(--mint-luminous);
+}
+
+.brand-glyph::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid var(--mint-glow);
+  border-radius: 50%;
+  opacity: 0.6;
+  animation: pulse-ring 2.8s infinite ease-out;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  50% { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(0.85); opacity: 0; }
 }
 
 .nav-links {
   display: flex;
   align-items: center;
   gap: 28px;
+  list-style: none;
 }
 
-.nav-link {
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
+.nav-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13.5px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  transition: color 0.2s ease, text-shadow 0.2s ease;
+  letter-spacing: 0.2px;
+  transition: color var(--trans-fast);
+  padding: 6px 0;
+  position: relative;
 }
 
-.nav-link:hover {
-  color: var(--text-white);
-  text-shadow: 0 0 10px var(--mint-glass);
+.nav-links a:hover {
+  color: var(--mint-glow);
 }
 
-.header-meta {
+.nav-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  color: var(--mint-glow);
+  background: rgba(138, 232, 196, 0.08);
+  border: 1px solid rgba(138, 232, 196, 0.25);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--mint-line);
-  background: rgba(36, 77, 46, 0.24);
-  border: 1px solid var(--border-line);
-  padding: 5px 12px;
-  border-radius: var(--radius-full);
+  gap: 6px;
 }
 
-.badge-dot {
+.badge::before {
+  content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--mint-glow);
-  box-shadow: 0 0 8px var(--mint-glow);
+  background: var(--mint-luminous);
+  box-shadow: 0 0 6px var(--mint-luminous);
 }
 
-.btn-nav-action {
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  padding: 8px 18px;
-  border-radius: var(--radius-full);
-  background: var(--surface-emerald);
-  border: 1px solid var(--border-line);
+.btn-nav-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--surface-forest);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-pill);
   color: var(--text-white);
-  transition: all 0.2s ease;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-decoration: none;
+  transition: all var(--trans-fast);
 }
 
-.btn-nav-action:hover {
-  background: var(--accent-emerald);
-  border-color: var(--mint-line);
-  color: var(--mint-line);
-  box-shadow: 0 0 16px var(--mint-faint);
+.btn-nav-enter:hover {
+  background: var(--surface-elevated);
+  border-color: var(--mint-glow);
+  box-shadow: var(--glow-emerald);
+  transform: translateY(-1px);
 }
 
-/* ==========================================================================
-   Hero Section — Cinematic Immersive
-   ========================================================================== */
-
+/* --- 4. HERO SECTION (ACTIVE THEORY / VIZO CINEMATIC) --- */
 .hero-section {
   position: relative;
-  min-height: calc(100vh - 65px);
+  min-height: calc(100vh - var(--nav-height));
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  text-align: center;
-  padding: 72px 24px 96px;
+  justify-content: center;
+  padding: 64px 32px 96px;
   overflow: hidden;
 }
 
@@ -5952,236 +5926,326 @@ p {
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: auto;
+  pointer-events: none;
   z-index: 1;
 }
 
-.hero-overlay {
+.hero-grid-ambient {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 45%, transparent 15%, var(--bg-void) 82%);
+  background: radial-gradient(circle at 50% 45%, rgba(36, 77, 46, 0.35) 0%, transparent 65%);
   pointer-events: none;
-  z-index: 2;
+  z-index: 1;
 }
 
 .hero-content {
   position: relative;
-  z-index: 3;
-  max-width: 920px;
+  z-index: 2;
+  max-width: var(--max-width);
+  width: 100%;
   margin: 0 auto;
-}
-
-.hero-tagline {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1.25fr 0.95fr;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 64px;
 }
 
-.eyebrow-badge {
+.hero-editorial {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.12em;
-  color: var(--mint-line);
-  background: rgba(16, 37, 29, 0.85);
-  border: 1px solid var(--border-line);
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
+  letter-spacing: 2.2px;
   text-transform: uppercase;
+  color: var(--mint-glow);
 }
 
-.provenance-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  color: var(--jade-muted);
+.hero-eyebrow::before {
+  content: '◈';
+  color: var(--mint-luminous);
+  font-size: 11px;
 }
 
-.hero-title {
-  font-size: clamp(2.75rem, 6.8vw, 5.5rem);
+.hero-headline {
+  font-family: var(--font-display);
+  font-size: clamp(44px, 5.8vw, 84px);
   font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1.04;
-  margin-bottom: 28px;
-  text-transform: uppercase;
+  line-height: 1.02;
+  letter-spacing: -2px;
   color: var(--text-white);
+  text-transform: uppercase;
 }
 
-.hero-title-accent {
-  background: linear-gradient(135deg, var(--text-white) 25%, var(--mint-line) 75%, var(--mint-glow) 100%);
+.hero-headline .highlight {
+  display: block;
+  color: transparent;
+  background: linear-gradient(135deg, var(--mint-luminous) 0%, #8ae8c4 40%, var(--jade-muted) 100%);
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 35px rgba(62, 232, 159, 0.22);
+  background-clip: text;
+  text-shadow: 0 0 35px rgba(62, 232, 159, 0.25);
 }
 
-.hero-lead {
-  font-size: clamp(1rem, 1.35vw, 1.25rem);
-  line-height: 1.65;
-  color: var(--silver-pale);
-  max-width: 740px;
-  margin: 0 auto 36px;
+.hero-summary {
+  font-size: clamp(16px, 1.3vw, 19px);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 620px;
+  font-weight: 400;
+}
+
+.hero-disclaimer-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(16, 37, 29, 0.65);
+  border-left: 2px solid var(--amber-warning);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 12px 18px;
+  max-width: 620px;
+}
+
+.hero-disclaimer-pill p {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--amber-warning);
+  margin: 0;
 }
 
 .hero-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 16px;
-  margin-bottom: 34px;
-}
-
-.btn-hero-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-sans);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  background: var(--mint-line);
-  color: var(--bg-void);
-  padding: 14px 28px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--mint-glow);
-  box-shadow: 0 0 28px rgba(62, 232, 159, 0.28);
-  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.btn-hero-primary:hover {
-  background: var(--mint-glow);
-  color: #020605;
-  box-shadow: 0 0 38px rgba(62, 232, 159, 0.45);
-  transform: translateY(-2px);
-}
-
-.btn-hero-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-sans);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  background: rgba(16, 37, 29, 0.72);
-  color: var(--text-white);
-  padding: 14px 28px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-line);
-  backdrop-filter: blur(8px);
-  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.btn-hero-secondary:hover {
-  background: var(--surface-emerald);
-  border-color: var(--mint-line);
-  color: var(--mint-line);
-  transform: translateY(-2px);
-}
-
-.hero-disclaimer-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 0.8125rem;
-  color: var(--amber-warning);
-  background: rgba(241, 204, 139, 0.06);
-  border: 1px solid rgba(241, 204, 139, 0.22);
-  padding: 8px 18px;
-  border-radius: var(--radius-full);
-  max-width: 90%;
-  margin: 0 auto;
-}
-
-.hero-telemetry-ribbon {
-  position: absolute;
-  bottom: 24px;
-  z-index: 3;
-  display: flex;
+  margin-top: 8px;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
-  width: 100%;
-  max-width: var(--max-w);
-  padding: 0 24px;
 }
 
-.telemetry-pill {
+.btn-primary-glow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 30px;
+  background: var(--mint-luminous);
+  color: #03150d;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-decoration: none;
+  border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(62, 232, 159, 0.35);
+  transition: all var(--trans-fast);
+}
+
+.btn-primary-glow:hover {
+  background: #50f5ad;
+  box-shadow: 0 0 36px rgba(62, 232, 159, 0.55);
+  transform: translateY(-2px);
+}
+
+.btn-secondary-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 15px 26px;
+  background: rgba(16, 37, 29, 0.5);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-line);
+  transition: all var(--trans-fast);
+}
+
+.btn-secondary-ghost:hover {
+  background: var(--surface-forest);
+  border-color: var(--border-active);
+  color: var(--text-white);
+  transform: translateY(-1px);
+}
+
+/* Floating Telemetry Centerpiece (Vizo / Active Theory) */
+.hero-centerpiece {
+  display: flex;
+  justify-content: center;
+}
+
+.centerpiece-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: rgba(10, 27, 22, 0.75);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-lg);
+  padding: 30px;
+  box-shadow: var(--glow-card), var(--glow-emerald);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.centerpiece-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 24px; right: 24px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--mint-glow), transparent);
+}
+
+.centerpiece-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(16, 37, 29, 0.58);
-  border: 1px solid var(--border-faint);
-  backdrop-filter: blur(8px);
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
+  justify-content: space-between;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-line);
+}
+
+.instrument-tag {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--mint-glow);
+  text-transform: uppercase;
 }
 
-.pill-label {
-  color: var(--jade-muted);
-  letter-spacing: 0.06em;
+.radar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint-luminous);
+  box-shadow: 0 0 8px var(--mint-luminous);
 }
 
-.pill-val {
-  color: var(--text-white);
+.centerpiece-body {
+  padding: 24px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.telemetry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.telemetry-label {
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
-/* ==========================================================================
-   Section Headers
-   ========================================================================== */
-
-.section-header {
-  margin-bottom: 32px;
-}
-
-.section-step {
+.telemetry-val {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  color: var(--text-white);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  color: var(--mint-line);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-  display: block;
 }
 
-.section-heading {
-  font-size: clamp(1.75rem, 3.2vw, 2.5rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.telemetry-val.highlight {
+  color: var(--mint-glow);
+}
+
+.centerpiece-waveform-preview {
+  height: 70px;
+  background: rgba(7, 19, 16, 0.7);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.centerpiece-waveform-preview svg {
+  width: 100%;
+  height: 100%;
+}
+
+.centerpiece-footer {
+  padding-top: 18px;
+  border-top: 1px solid var(--border-line);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* --- 5. MAIN APPLICATION COCKPIT (THE LAB) --- */
+.lab-main {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 40px 32px 96px;
+}
+
+.section-anchor-header {
+  margin-bottom: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--mint-glow);
+  text-transform: uppercase;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.2vw, 42px);
+  font-weight: 800;
+  letter-spacing: -1px;
   color: var(--text-white);
-  margin-bottom: 8px;
 }
 
 .section-desc {
-  font-size: 0.9375rem;
-  color: var(--text-dim);
-  max-width: 780px;
-  margin: 0;
+  font-size: 15px;
+  color: var(--text-secondary);
+  max-width: 680px;
 }
 
-/* ==========================================================================
-   Modular Cards & Panels
-   ========================================================================== */
+/* Modular Cockpit Grid */
+.cockpit-layout {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
 
+/* Surface Panel Styles */
 .panel {
   background: var(--surface-card);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-line);
   border-radius: var(--radius-lg);
-  padding: 26px;
-  box-shadow: var(--glow-subtle);
-  transition: border-color 0.24s ease, box-shadow 0.24s ease;
+  padding: 32px;
+  box-shadow: var(--glow-card);
+  position: relative;
+  overflow: hidden;
 }
 
-.panel:hover {
-  border-color: rgba(138, 232, 196, 0.32);
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(138, 232, 196, 0.22), transparent);
 }
 
 .panel-header {
@@ -6189,1159 +6253,754 @@ p {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-faint);
 }
 
-.panel-title-group {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.panel-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--jade-muted);
-}
-
-.panel-dot.live {
-  background: var(--mint-glow);
-  box-shadow: 0 0 10px var(--mint-glow);
-}
-
-.panel-dot.ai {
-  background: #a38cf4;
-  box-shadow: 0 0 10px #a38cf4;
-}
-
-.panel-title {
-  font-size: 1.0625rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.panel-heading {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-white);
+  letter-spacing: -0.3px;
 }
 
-.panel-badge {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: rgba(111, 146, 138, 0.16);
-  color: var(--jade-muted);
-  border: 1px solid var(--border-faint);
-}
-
-/* ==========================================================================
-   Main Signal Lab Cockpit Layout
-   ========================================================================== */
-
-.lab-workspace,
-.analytics-workspace,
-.challenge-workspace,
-.evidence-workspace,
-.method-workspace {
-  max-width: var(--max-w);
-  margin: 0 auto;
-  padding: 60px 24px;
-}
-
-.layout-cockpit {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 28px;
-  align-items: start;
-}
-
-/* Sample Switcher Buttons */
-.input-selection-group {
-  margin-bottom: 20px;
-}
-
-.group-label {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  color: var(--jade-muted);
-  margin-bottom: 10px;
-}
-
-.sample-buttons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin: 0;
-}
-
-.btn-sample {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  text-align: left;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: rgba(16, 37, 29, 0.9);
-  border: 1px solid var(--border-line);
-  color: var(--text-white);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-sample strong {
-  display: block;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-white);
-  line-height: 1.25;
-}
-
-.btn-sample small {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--mint-line);
-  margin-top: 3px;
-}
-
-.btn-sample .btn-icon {
-  font-size: 0.875rem;
-  color: var(--mint-glow);
-  margin-top: 2px;
-}
-
-.btn-sample.secondary {
-  border-color: var(--border-faint);
-  background: rgba(7, 19, 16, 0.6);
-}
-
-.btn-sample.secondary small {
-  color: var(--amber-warning);
-}
-
-.btn-sample:hover:not(:disabled) {
-  border-color: var(--mint-line);
-  background: var(--surface-emerald);
-  transform: translateY(-1px);
-}
-
-/* ==========================================================================
-   Capture Viewport & Geometric Guide
-   ========================================================================== */
-
+/* Capture Stage & Viewport */
 .capture-stage {
   position: relative;
-  background: #040a08;
+  background: #040c09;
   border: 1px solid var(--border-line);
   border-radius: var(--radius-md);
   overflow: hidden;
-  min-height: 280px;
   aspect-ratio: 4/3;
-  margin-bottom: 16px;
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
+  margin: 20px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.8);
 }
 
-video {
+.capture-stage video {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
-  background: #040a08;
+  object-fit: cover;
 }
 
+/* Viewport HUD Overlays */
+.viewport-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hud-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(138, 232, 196, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(138, 232, 196, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.5;
+}
+
+.hud-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--mint-glow);
+  border-style: solid;
+  opacity: 0.7;
+}
+
+.hud-corner.tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+.hud-corner.tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+.hud-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+.hud-corner.br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+.hud-live-tag {
+  position: absolute;
+  top: 14px;
+  left: 32px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--mint-glow);
+  background: rgba(3, 9, 7, 0.75);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-line);
+}
+
+/* Scanning Sweep Laser */
+.scan-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--mint-luminous), transparent);
+  box-shadow: 0 0 12px var(--mint-luminous);
+  top: 0;
+  opacity: 0;
+  z-index: 3;
+}
+
+.capture-stage.scanning .scan-bar {
+  opacity: 1;
+  animation: laser-sweep 2.2s infinite ease-in-out;
+}
+
+@keyframes laser-sweep {
+  0% { top: 0%; }
+  50% { top: 98%; }
+  100% { top: 0%; }
+}
+
+/* Fixed Cheek Guide Regions */
 .guide {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 2;
 }
 
-.scan-laser {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 5%, var(--mint-glow) 50%, transparent 95%);
-  box-shadow: 0 0 12px var(--mint-glow), 0 0 24px var(--mint-glow);
-  opacity: 0;
-  transform: translateY(-100%);
-  pointer-events: none;
-}
-
-.capture-stage.scanning .scan-laser {
-  opacity: 0.85;
-  animation: laserScan 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes laserScan {
-  0% { transform: translateY(0); opacity: 0; }
-  10% { opacity: 0.85; }
-  90% { opacity: 0.85; }
-  100% { transform: translateY(280px); opacity: 0; }
-}
-
-.roi-container {
+.roi {
   position: absolute;
   top: 48%;
   width: 12%;
   height: 12%;
-  pointer-events: none;
-}
-
-.roi-container.left { left: 32%; }
-.roi-container.right { left: 56%; }
-
-.roi {
-  position: absolute;
-  inset: 0;
-  border: 1.5px dashed var(--mint-line);
+  border: 1.5px dashed var(--mint-glow);
   background: rgba(138, 232, 196, 0.08);
+  box-shadow: 0 0 12px rgba(62, 232, 159, 0.15);
   border-radius: 4px;
-}
-
-.roi-bracket {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-color: var(--mint-glow);
-  border-style: solid;
-  border-width: 0;
-}
-
-.roi-bracket.top-left { top: -2px; left: -2px; border-top-width: 2px; border-left-width: 2px; }
-.roi-bracket.top-right { top: -2px; right: -2px; border-top-width: 2px; border-right-width: 2px; }
-.roi-bracket.bottom-left { bottom: -2px; left: -2px; border-bottom-width: 2px; border-left-width: 2px; }
-.roi-bracket.bottom-right { bottom: -2px; right: -2px; border-bottom-width: 2px; border-right-width: 2px; }
-
-.roi-tag {
-  position: absolute;
-  bottom: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: 0.5625rem;
-  letter-spacing: 0.06em;
-  color: var(--mint-line);
-  white-space: nowrap;
-  background: rgba(3, 9, 7, 0.8);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--border-faint);
-}
-
-.viewport-hud-bottom {
-  position: absolute;
-  bottom: 8px;
-  left: 12px;
-  right: 12px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: center;
+}
+
+.roi.left { left: 32%; }
+.roi.right { left: 56%; }
+
+.roi::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  background: var(--mint-glow);
+  border-radius: 50%;
+}
+
+.roi-label {
+  position: absolute;
+  bottom: -22px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
-  color: var(--jade-muted);
-  background: rgba(3, 9, 7, 0.7);
-  padding: 4px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--border-faint);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--mint-glow);
+  background: rgba(3, 9, 7, 0.85);
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
-.viewport-hud-bottom strong {
-  color: var(--text-white);
-}
-
-.align-hint {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  margin-bottom: 20px;
-  line-height: 1.5;
-}
-
-/* Controls & Buttons */
-.capture-controls-card {
-  background: var(--surface-card-inner);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.consent {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  margin-bottom: 16px;
-}
-
-.consent input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+/* Status Banner */
+#status {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--mint-glow);
+  background: rgba(10, 27, 22, 0.7);
   border: 1px solid var(--border-line);
-  background: var(--bg-deep);
-  margin-top: 2px;
-  cursor: pointer;
-  display: grid;
-  place-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
 }
 
-.consent input[type="checkbox"]::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  transform: scale(0);
-  transition: transform 0.15s ease-in-out;
-  background-color: var(--mint-glow);
-  box-shadow: 0 0 6px var(--mint-glow);
+#status::before {
+  content: '▸';
+  color: var(--mint-luminous);
+  font-weight: 700;
 }
 
-.consent input[type="checkbox"]:checked {
-  border-color: var(--mint-line);
-  background: var(--surface-forest);
-}
-
-.consent input[type="checkbox"]:checked::before {
-  transform: scale(1);
-}
-
+/* Buttons & Segmented Controls */
 .buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin: 16px 0;
 }
 
 button {
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
+  font-family: var(--font-body);
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 10px 18px;
+  border: 1px solid var(--border-active);
+  background: var(--surface-forest);
+  color: var(--text-white);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--mint-line);
-  background: var(--mint-line);
-  color: var(--bg-void);
+  padding: 11px 18px;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  transition: all var(--trans-fast);
 }
 
 button:hover:not(:disabled) {
-  background: var(--mint-glow);
-  box-shadow: 0 0 16px rgba(62, 232, 159, 0.3);
+  background: var(--surface-elevated);
+  border-color: var(--mint-glow);
+  box-shadow: 0 0 16px rgba(62, 232, 159, 0.2);
   transform: translateY(-1px);
 }
 
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 button:disabled {
-  opacity: 0.38;
+  opacity: 0.35;
   cursor: not-allowed;
-  border-color: var(--border-faint);
-  filter: grayscale(0.5);
+  border-color: var(--border-line);
+}
+
+button#clean {
+  background: var(--mint-luminous);
+  color: #03150d;
+  border-color: var(--mint-luminous);
+  font-weight: 700;
+}
+
+button#clean:hover:not(:disabled) {
+  background: #50f5ad;
+  box-shadow: 0 0 20px rgba(62, 232, 159, 0.4);
 }
 
 button.secondary {
-  background: rgba(16, 37, 29, 0.6);
+  background: transparent;
+  color: var(--text-primary);
   border-color: var(--border-line);
-  color: var(--text-white);
 }
 
 button.secondary:hover:not(:disabled) {
-  background: var(--surface-emerald);
-  border-color: var(--mint-line);
-  color: var(--mint-line);
-}
-
-/* File Ingestion Dropzones */
-.ingestion-dropzones {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.dropzone-card {
-  background: var(--surface-card-inner);
-  border: 1px dashed var(--border-line);
-  border-radius: var(--radius-md);
-  padding: 14px;
-  transition: border-color 0.2s ease;
-}
-
-.dropzone-card:hover {
-  border-color: var(--mint-line);
-}
-
-.dropzone-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.dropzone-title {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-white);
-}
-
-.file-label-text {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-}
-
-input[type="file"] {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--jade-muted);
-  max-width: 100%;
-}
-
-input[type="file"]::file-selector-button {
-  font-family: var(--font-sans);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  padding: 5px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--border-line);
   background: var(--surface-forest);
+  border-color: var(--border-active);
   color: var(--text-white);
-  cursor: pointer;
-  margin-right: 8px;
-  transition: all 0.2s ease;
 }
 
-input[type="file"]::file-selector-button:hover {
-  background: var(--surface-emerald);
-  border-color: var(--mint-line);
-  color: var(--mint-line);
-}
-
-/* Status Ticker Card */
-.status-ticker-card {
-  background: rgba(4, 10, 8, 0.75);
-  border: 1px solid var(--border-faint);
+/* File Inputs & Custom Dropzones */
+.file {
+  display: block;
+  background: rgba(10, 27, 22, 0.4);
+  border: 1px dashed var(--border-line);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  padding: 14px 18px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--trans-fast);
 }
 
-.status-label {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
-  color: var(--mint-line);
-  background: rgba(36, 77, 46, 0.35);
-  border: 1px solid var(--border-line);
-  padding: 3px 8px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-#status {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
+.file:hover {
+  border-color: var(--mint-glow);
   color: var(--text-white);
-  margin: 0;
-  min-height: auto;
 }
 
-/* ==========================================================================
-   Telemetry & Quality HUD (Right Column)
-   ========================================================================== */
-
-.telemetry-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
+.file input[type="file"] {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
-.metric-card {
-  background: var(--surface-card-inner);
+/* Form Controls & Checkboxes */
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 16px 0;
+  cursor: pointer;
+}
+
+.consent input[type="checkbox"],
+input[type="checkbox"] {
+  margin-top: 3px;
+  width: 17px;
+  height: 17px;
+  accent-color: var(--mint-luminous);
+  cursor: pointer;
+}
+
+input[type="password"] {
+  display: block;
+  background: #061511;
+  color: var(--text-white);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin: 8px 0 16px;
+  transition: border-color var(--trans-fast);
+}
+
+input[type="password"]:focus {
+  outline: none;
+  border-color: var(--mint-glow);
+  box-shadow: 0 0 12px rgba(62, 232, 159, 0.2);
+}
+
+/* --- 6. TELEMETRY & RESULTS COCKPIT (VIZO-INSPIRED) --- */
+.telemetry-cockpit {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.provenance-card {
+  background: rgba(7, 19, 16, 0.7);
   border: 1px solid var(--border-line);
   border-radius: var(--radius-md);
-  padding: 22px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4);
-}
-
-.metric-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--mint-line), transparent);
-}
-
-.metric-header {
+  padding: 18px 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
 }
 
-.metric-label {
+#source {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  color: var(--jade-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--mint-glow);
+  text-transform: uppercase;
 }
 
-.metric-badge {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  padding: 2px 7px;
-  border-radius: 3px;
-  background: rgba(36, 77, 46, 0.3);
-  color: var(--mint-line);
-  border: 1px solid var(--border-faint);
+/* Primary Dual Metrics Card */
+.metrics {
+  background: rgba(10, 27, 22, 0.7);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-md);
+  padding: 28px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  box-shadow: var(--glow-emerald);
+  margin-top: 18px;
 }
 
-.metric-main {
+.metrics > div {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 8px;
+  flex-direction: column;
 }
 
 .number {
   font-family: var(--font-mono);
-  font-size: clamp(3.2rem, 5vw, 4.5rem);
+  font-size: clamp(52px, 5.2vw, 76px);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -2px;
   line-height: 1;
   color: var(--mint-glow);
-  text-shadow: 0 0 24px rgba(62, 232, 159, 0.3);
+  text-shadow: 0 0 24px rgba(62, 232, 159, 0.35);
 }
 
 .number.small {
-  font-size: clamp(2.4rem, 3.8vw, 3.2rem);
+  font-size: clamp(38px, 4vw, 54px);
   color: var(--silver-pale);
   text-shadow: none;
 }
 
 .unit {
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
-  color: var(--text-dim);
+  display: block;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-top: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.8px;
 }
 
-.metric-decision {
-  font-size: 0.875rem;
-  color: var(--silver-pale);
-  margin: 0;
+#decision {
+  font-size: 14.5px;
+  color: var(--text-white);
+  padding: 12px 16px;
+  background: rgba(16, 37, 29, 0.5);
+  border-left: 3px solid var(--mint-glow);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 16px 0 6px;
+  font-weight: 500;
 }
 
-.quality-disclaimer {
-  font-size: 0.75rem;
+.hint {
+  font-size: 12px;
   color: var(--text-muted);
-  margin: 0;
-  line-height: 1.4;
+  line-height: 1.55;
+  margin: 8px 0 16px;
 }
 
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  color: var(--mint-line);
-  margin: 0;
+/* --- 7. SIGNAL PLOTS (OSCILLOSCOPE & SPECTRUM) --- */
+.plot-group {
+  margin: 22px 0;
 }
 
-.export-buttons {
-  margin-bottom: 24px;
-}
-
-.export-buttons button {
-  flex: 1;
-  min-width: 140px;
-  font-size: 0.75rem;
-  padding: 8px 12px;
-}
-
-/* Guided Retake Analysis Card */
-.retake-section {
-  background: rgba(7, 19, 16, 0.85);
-  border: 1px solid var(--border-line);
-  border-radius: var(--radius-md);
-  padding: 18px;
-}
-
-.retake-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.retake-icon {
-  color: var(--amber-warning);
-  font-size: 0.875rem;
-}
-
-.retake-title {
-  font-size: 0.9375rem;
-  font-weight: 600;
+h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   color: var(--text-white);
+  text-transform: uppercase;
+  margin: 20px 0 8px;
 }
 
-#retakeAdvice {
-  font-size: 0.8125rem;
-  color: var(--silver-pale);
-  margin-bottom: 12px;
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-
-.retake-comparison-box {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--mint-line);
-  background: rgba(3, 9, 7, 0.6);
-  border: 1px solid var(--border-faint);
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 14px;
-}
-
-/* ==========================================================================
-   Signal Analytics: Oscilloscope & Spectrum
-   ========================================================================== */
-
-.oscilloscope-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-
-.scope-card {
-  padding: 22px;
-}
-
-.scope-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.scope-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.scope-beacon {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.scope-beacon.mint {
-  background: var(--mint-glow);
-  box-shadow: 0 0 10px var(--mint-glow);
-}
-
-.scope-beacon.amber {
-  background: var(--amber-warning);
-  box-shadow: 0 0 10px var(--amber-warning);
-}
-
-.scope-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-white);
-}
-
-.scope-meta {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--jade-muted);
-}
-
-.canvas-wrap {
+.canvas-frame {
   position: relative;
-  background: #040907;
-  border: 1px solid var(--border-faint);
+  background: #05110d;
+  border: 1px solid var(--border-line);
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.7);
+  padding: 4px;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
 }
 
 canvas {
   display: block;
   width: 100%;
   height: auto;
+  border-radius: 4px;
 }
 
 .axis {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--jade-muted);
-  margin-top: 10px;
-  margin-bottom: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 6px 0 16px;
 }
 
-/* 14 Quality Gates Drawer */
-.quality-gates-drawer {
-  padding: 20px;
+/* --- 8. QUALITY MATRIX & GUIDED RETAKE --- */
+details {
+  background: rgba(7, 19, 16, 0.6);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
+  padding: 18px 22px;
+  margin: 20px 0;
+  transition: all var(--trans-fast);
 }
 
-details summary {
+details[open] {
+  background: rgba(10, 27, 22, 0.65);
+  border-color: var(--border-active);
+}
+
+summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-white);
+  letter-spacing: 0.2px;
+  list-style: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  cursor: pointer;
-  padding: 4px 0;
-  user-select: none;
 }
 
-.summary-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.9375rem;
-  color: var(--text-white);
+summary::-webkit-details-marker {
+  display: none;
 }
 
-.summary-icon {
-  color: var(--mint-line);
+summary::after {
+  content: '▼';
+  font-size: 10px;
+  color: var(--mint-glow);
+  transition: transform var(--trans-fast);
 }
 
-.summary-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  color: var(--jade-muted);
+details[open] summary::after {
+  transform: rotate(180deg);
 }
 
-.checks-grid {
+#checks {
+  margin-top: 18px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-faint);
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .check {
-  background: rgba(7, 19, 16, 0.65);
-  border: 1px solid var(--border-faint);
+  background: rgba(4, 12, 9, 0.7);
+  border: 1px solid rgba(111, 146, 138, 0.12);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  font-size: 0.75rem;
-  transition: border-color 0.2s ease;
+  padding: 12px 16px;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .check strong {
-  display: block;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  margin-bottom: 4px;
-}
-
-.check strong.pass {
-  color: var(--mint-line);
-}
-
-.check strong.fail {
-  color: var(--coral-danger);
-}
-
-.check div {
-  color: var(--text-dim);
-  font-size: 0.6875rem;
-  line-height: 1.4;
-  margin-top: 4px;
-}
-
-/* ==========================================================================
-   Artifact Challenge Lab
-   ========================================================================== */
-
-.challenges-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.challenge-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 22px;
-}
-
-.challenge-card-header {
-  margin-bottom: 12px;
-}
-
-.challenge-badge {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
-  padding: 3px 8px;
-  border-radius: 3px;
-  background: rgba(36, 77, 46, 0.3);
-  color: var(--mint-line);
-  border: 1px solid var(--border-faint);
-  margin-bottom: 8px;
-}
-
-.challenge-badge.highlight {
-  background: rgba(241, 204, 139, 0.14);
-  color: var(--amber-warning);
-  border-color: rgba(241, 204, 139, 0.3);
-}
-
-.challenge-card-title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--text-white);
-}
-
-.challenge-card-desc {
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  line-height: 1.5;
-  margin-bottom: 20px;
-  flex-grow: 1;
-}
-
-.challenge-card-action button {
-  width: 100%;
-}
-
-.challenge-output-card {
-  padding: 20px;
-  background: rgba(7, 19, 16, 0.75);
-}
-
-.output-header-tag {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  color: var(--mint-line);
-  margin-bottom: 8px;
-}
-
-.comparison-readout {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--silver-pale);
-  white-space: pre-wrap;
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* ==========================================================================
-   AI Commentary & Verification Drawer
-   ========================================================================== */
-
-.evidence-grid {
-  display: grid;
-  grid-template-columns: 1.25fr 0.75fr;
-  gap: 24px;
-}
-
-.model-badge {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: rgba(163, 140, 244, 0.15);
-  color: #c4b5fd;
-  border: 1px solid rgba(163, 140, 244, 0.35);
-}
-
-.ai-controls-wrap {
-  margin-bottom: 20px;
-}
-
-.ai-consent-toggle {
-  margin-bottom: 18px;
-}
-
-.token-input-group {
-  margin-bottom: 16px;
-}
-
-.token-input-group label {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--jade-muted);
-  margin-bottom: 6px;
-}
-
-input[type="password"] {
-  display: block;
-  width: 100%;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  padding: 10px 14px;
-  background: rgba(4, 10, 8, 0.8);
-  border: 1px solid var(--border-line);
-  border-radius: var(--radius-sm);
-  color: var(--text-white);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-input[type="password"]:focus {
-  outline: none;
-  border-color: var(--mint-line);
-  box-shadow: 0 0 12px var(--mint-faint);
-}
-
-.btn-explain {
-  background: #6d4bd8;
-  border-color: #8b6dfc;
-  color: #ffffff;
-}
-
-.btn-explain:hover:not(:disabled) {
-  background: #805df6;
-  box-shadow: 0 0 20px rgba(128, 93, 246, 0.4);
-}
-
-.explanation-stream-card {
-  background: rgba(4, 10, 8, 0.7);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--radius-sm);
-  padding: 16px;
-}
-
-.stream-header-tag {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
-  color: #c4b5fd;
-  margin-bottom: 8px;
-}
-
-#explanation {
-  font-size: 0.875rem;
-  color: var(--silver-pale);
-  white-space: pre-wrap;
-  margin: 0;
-  line-height: 1.6;
-}
-
-.session-badge {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: rgba(111, 146, 138, 0.2);
-  color: var(--jade-muted);
-}
-
-.session-desc {
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  line-height: 1.6;
-  margin-bottom: 24px;
-}
-
-.btn-clear-session {
-  width: 100%;
-}
-
-/* ==========================================================================
-   Scientific Method Section
-   ========================================================================== */
-
-.method-workspace {
-  margin-top: 20px;
-  padding: 36px 32px;
-}
-
-.method-title {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--text-white);
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--border-faint);
-  padding-bottom: 12px;
-}
-
-.method-columns {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 28px;
-}
-
-.method-col h4 {
-  font-size: 0.9375rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--mint-line);
-  margin-bottom: 10px;
+  letter-spacing: 0.4px;
 }
 
-.method-col p {
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  line-height: 1.6;
-  margin: 0;
-}
-
-/* ==========================================================================
-   Footer
-   ========================================================================== */
-
-.site-footer {
-  border-top: 1px solid var(--border-faint);
-  background: var(--bg-deep);
-  padding: 36px 24px;
-  margin-top: 40px;
-}
-
-.footer-inner {
-  max-width: var(--max-w);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.footer-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-display);
-  font-size: 1rem;
-  color: var(--text-white);
-}
-
-.footer-symbol {
+.pass {
   color: var(--mint-glow);
 }
 
-.footer-meta {
-  font-size: 0.75rem;
-  color: var(--jade-muted);
-  margin: 0;
+.pass::before {
+  content: '✓ ';
+  color: var(--mint-luminous);
+}
+
+.fail {
+  color: var(--amber-warning);
+}
+
+.fail::before {
+  content: '✕ ';
+  color: var(--amber-warning);
+}
+
+.check div {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Guided Retake Section */
+.retake-section {
+  background: rgba(16, 37, 29, 0.4);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
+  padding: 22px;
+  margin: 22px 0;
+}
+
+.retake-section h3 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-white);
+  margin-bottom: 8px;
+}
+
+#retakeAdvice, #retakeComparison {
+  font-size: 12.5px;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
-.footer-links a {
-  font-size: 0.75rem;
-  color: var(--mint-line);
+/* --- 9. ARTIFACT CHALLENGE LAB (SCIENTIFIC TILES) --- */
+.challenge-card {
+  margin: 28px 0;
+  padding: 24px;
+  background: rgba(7, 19, 16, 0.75);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
 }
 
-/* ==========================================================================
-   Keyframe Animations
-   ========================================================================== */
-
-@keyframes pulseBeacon {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.9); }
+.challenge-card h3 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-white);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
 }
 
-/* ==========================================================================
-   Accessibility & Responsive Media Queries
-   ========================================================================== */
-
-@media (max-width: 1024px) {
-  .layout-cockpit {
-    grid-template-columns: 1fr;
-  }
-  .oscilloscope-grid {
-    grid-template-columns: 1fr;
-  }
-  .challenges-grid {
-    grid-template-columns: 1fr;
-  }
-  .evidence-grid {
-    grid-template-columns: 1fr;
-  }
-  .method-columns {
-    grid-template-columns: 1fr;
-  }
+#comparison {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: rgba(4, 12, 9, 0.8);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  margin-top: 14px;
+  min-height: 48px;
+  white-space: pre-wrap;
 }
 
-@media (max-width: 768px) {
-  .site-header .nav-links {
-    display: none;
-  }
-  .sample-buttons {
-    grid-template-columns: 1fr;
-  }
-  .ingestion-dropzones {
-    grid-template-columns: 1fr;
-  }
-  .hero-section {
-    padding: 48px 16px 64px;
-    min-height: auto;
-  }
-  .hero-title {
-    font-size: 2.35rem;
-  }
-  .hero-actions {
-    flex-direction: column;
-    width: 100%;
-  }
-  .btn-hero-primary,
-  .btn-hero-secondary {
-    width: 100%;
-    justify-content: center;
-  }
-  .hero-telemetry-ribbon {
-    position: static;
-    margin-top: 32px;
-    padding: 0;
-  }
-  .lab-workspace,
-  .analytics-workspace,
-  .challenge-workspace,
-  .evidence-workspace,
-  .method-workspace {
-    padding: 36px 16px;
-  }
-  .panel {
-    padding: 18px;
-  }
+/* --- 10. AI EXPLANATION & EVIDENCE DRAWER --- */
+.ai-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-line);
 }
 
+.ai-section h3 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-white);
+  letter-spacing: 0.3px;
+  margin-bottom: 12px;
+}
+
+#explanation {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: rgba(4, 12, 9, 0.85);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+  margin: 14px 0;
+  min-height: 54px;
+  white-space: pre-wrap;
+}
+
+/* --- 11. SCIENTIFIC METHOD & DISCLAIMERS SECTION --- */
+.method-section {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+  border-top: 1px solid var(--border-line);
+}
+
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.method-step-card {
+  background: rgba(10, 27, 22, 0.5);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.method-step-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mint-glow);
+  letter-spacing: 1.5px;
+}
+
+.method-step-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-white);
+}
+
+.method-step-desc {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* --- 12. FOOTER --- */
+footer {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 48px 32px 64px;
+  border-top: 1px solid var(--border-line);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* --- 13. ACCESSIBILITY & FOCUS STATES --- */
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--mint-luminous);
+  outline-offset: 3px;
+}
+
+/* Reduced Motion Override */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .scan-laser {
-    display: none !important;
+  .capture-stage.scanning .scan-bar {
+    animation: none;
+    opacity: 0.6;
   }
-  .brand-symbol {
-    animation: none !important;
+}
+
+/* --- 14. RESPONSIVE DESIGN (TABLET & MOBILE) --- */
+@media (max-width: 1024px) {
+  .cockpit-layout {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .hero-content {
+    grid-template-columns: 1fr;
+    gap: 48px;
+    text-align: left;
+  }
+  .hero-centerpiece {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .nav-container {
+    padding: 0 20px;
+  }
+  .nav-links {
+    display: none;
+  }
+  .hero-section {
+    padding: 48px 20px 64px;
+  }
+  .hero-headline {
+    font-size: 38px;
+    letter-spacing: -1px;
+  }
+  .lab-main {
+    padding: 28px 20px 64px;
+  }
+  .panel {
+    padding: 22px;
+  }
+  .metrics {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 20px;
+  }
+  .number {
+    font-size: 54px;
+  }
+  .number.small {
+    font-size: 36px;
+  }
+}
+
+@media (max-width: 600px) {
+  .badge {
+    display: none;
+  }
+  .telemetry-row {
+    font-size: 11.5px;
   }
 }
 ```
