@@ -4199,27 +4199,31 @@ def test_r1_queue_timeout_while_waiting_for_semaphore(monkeypatch):
         module.ai_lock = asyncio.Lock()
         provider_calls = 0
         orig_post = httpx.AsyncClient.post
+        in_provider = asyncio.Event()
+
         async def slow_post(self, url, **kwargs):
             nonlocal provider_calls
             if 'generativelanguage' in str(url):
                 provider_calls += 1
-                await asyncio.sleep(0.4)
+                if provider_calls == 2:
+                    in_provider.set()
+                await asyncio.sleep(0.5)
                 return httpx.Response(200, request=httpx.Request('POST', str(url)),
                     json={'candidates': [{'content': {'parts': [{'text': 'Slow provider ok.'}]}}]})
             return await orig_post(self, url, **kwargs)
 
         monkeypatch.setattr(httpx.AsyncClient, 'post', slow_post)
 
-        # Set budget for the 3rd call small so it times out waiting for queue
+        # Set budget for the 3rd call so analyze completes but semaphore wait times out
         transport = httpx.ASGITransport(app=module.app)
         async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
             # First occupy both semaphore slots with 2 slow tasks
             t1 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
             t2 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
-            await asyncio.sleep(0.02)  # ensure t1 and t2 have acquired slots
+            await asyncio.wait_for(in_provider.wait(), timeout=5.0)
 
-            # 3rd request has budget of 0.05s, so it must timeout in the queue
-            monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.05)
+            # 3rd request has budget of 0.2s: analyze completes (~10ms) but waiting for semaphore times out (< 0.5s)
+            monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.2)
             r3 = await ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
 
             # Cleanup slow tasks
