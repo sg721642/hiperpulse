@@ -111,13 +111,39 @@ jobs:
 
       - name: Verify negative timeout regression detection
         run: |
-          echo "Running acceptance suite with TEST_NEGATIVE_TIMEOUT=1 (expecting non-zero exit)..."
-          if TEST_NEGATIVE_TIMEOUT=1 SKIP_LIVE_AI=1 PORT=8080 node --experimental-websocket scripts/test_browser_acceptance.js; then
+          echo "Running acceptance suite with TEST_NEGATIVE_TIMEOUT=1 (expecting structured T11 failure)..."
+          mkdir -p test-results
+          RUNNER_EXIT=0
+          SUMMARY_JSON_PATH="test-results/negative-timeout-summary.json" TEST_NEGATIVE_TIMEOUT=1 SKIP_LIVE_AI=1 PORT=8080 node --experimental-websocket scripts/test_browser_acceptance.js || RUNNER_EXIT=$?
+          
+          if [ "$RUNNER_EXIT" -eq 0 ]; then
             echo "ERROR: Acceptance runner unexpectedly passed under TEST_NEGATIVE_TIMEOUT=1!"
             exit 1
-          else
-            echo "OK: Acceptance runner correctly exited with non-zero code under forced timeout."
           fi
+          
+          python3 -c '
+          import json, sys
+          with open("test-results/negative-timeout-summary.json") as f:
+              summary = json.load(f)
+          
+          assert summary["negative_timeout_mode"] is True, "negative_timeout_mode was not recorded"
+          assert summary["all_pass"] is False, "all_pass should be False"
+          
+          results_by_id = {r["id"]: r for r in summary["results"]}
+          t11 = results_by_id.get("T11")
+          assert t11 is not None, "T11 missing from results"
+          status = t11["status"]
+          detail = t11.get("detail", "")
+          assert status == "FAIL", f"T11 expected status FAIL, got {status}"
+          assert "timed out" in detail.lower(), f"T11 detail did not mention timeout: {detail}"
+          
+          for test_id in ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"]:
+              res = results_by_id.get(test_id)
+              assert res is not None, f"Pre-test {test_id} missing"
+              assert res["status"] == "PASS", f"Pre-test {test_id} did not pass: {res}"
+          
+          print("OK: Negative timeout regression specifically verified on T11 while other tests passed.")
+          '
 
   docker-smoke:
     name: Docker Build & Container Smoke Test

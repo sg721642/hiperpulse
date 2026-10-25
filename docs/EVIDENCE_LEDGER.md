@@ -147,5 +147,17 @@
 - **R6 (CI Lockfile Standardization & Negative Timeout Assertion):**
   - Standardized `.github/workflows/ci.yml` on `pip install -r requirements-lock.txt` across all jobs to match Dockerfile.
   - Added automated step verifying that `TEST_NEGATIVE_TIMEOUT=1` exits with non-zero code. Reconciled documentation across markdown files.
-- **Automated Test Totals:** **90 / 90 Python tests passing** in 7.21s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP; negative timeout regression verified.
+- **Automated Test Totals:** **91 / 91 Python tests passing** in 7.46s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP; structured negative timeout regression verified.
+
+### Milestone I: Final Pre-UI Engineering Verification & Professional Polish — VERIFIED
+- **Section A (True Deadline Fallback Safety):**
+  - Updated `/api/explain` in `app/main.py` so that when recomputation times out or encounters an error before an authoritative receipt exists, it returns a controlled `unavailable` response rather than executing an unbounded synchronous `analyze()` call outside the timeout scope.
+  - Added unit test `test_r1_analysis_failure_before_receipt_exists_returns_unavailable` and strengthened `test_r1_timeout_during_signal_recomputation` verifying single worker execution and no fabricated BPM or gate results.
+- **Section B (Structured Negative Timeout CI Assertion):**
+  - Enhanced `scripts/test_browser_acceptance.js` to emit a machine-readable JSON acceptance summary (`test-results/negative-timeout-summary.json`).
+  - Updated `.github/workflows/ci.yml` to parse the JSON summary and assert specifically that T11 failed due to forced timeout while pre-tests T01–T10 and subsequent tests T12, T17 passed, guaranteeing that unrelated setup or browser failures cannot masquerade as regression detection.
+- **Section C (Code and Documentation Polish):**
+  - Removed conversational tags, redundant comments, and internal tracking labels from application and test code.
+  - Synchronized documentation, decision records (D01–D27), and version metadata.
+
 

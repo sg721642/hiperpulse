@@ -1,4 +1,4 @@
-"""M5 Robustness, Invariant, and Security Boundary Test Suite."""
+"""Robustness, Invariant, and Security Boundary Test Suite."""
 from copy import deepcopy
 import json
 import numpy as np

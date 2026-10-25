@@ -542,7 +542,8 @@ async function main() {
         }
       } else {
         // F03: Explicit FAIL on timeout rather than silent omission!
-        recordResult('T11', 'FAIL', `Playback timed out after ${maxPlaybackSeconds}s without completing analysis`);
+        recordResult('T11', 'FAIL', `Playback timed out after ${maxPlaybackSeconds}s without completing analysis` +
+          (process.env.TEST_NEGATIVE_TIMEOUT ? ' (forced negative timeout)' : ''));
       }
     } catch (e) { recordResult('T11', 'FAIL', e.message); }
 
@@ -752,11 +753,28 @@ async function main() {
   console.log('========================================');
   console.log(`Executed: ${executedCount} / ${REGISTERED_TESTS.length} tests`);
 
+  const summaryPayload = {
+    all_pass: allPass,
+    executed_count: executedCount,
+    total_count: REGISTERED_TESTS.length,
+    negative_timeout_mode: Boolean(process.env.TEST_NEGATIVE_TIMEOUT),
+    results: Array.from(testResults.values()),
+  };
+  const summaryPath = process.env.SUMMARY_JSON_PATH || path.resolve(ROOT, 'test-results', 'browser-acceptance-summary.json');
+  try {
+    fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
+    fs.writeFileSync(summaryPath, JSON.stringify(summaryPayload, null, 2), 'utf-8');
+    console.log(`Structured acceptance summary saved: ${summaryPath}`);
+  } catch (err) {
+    console.warn(`Could not save summary JSON: ${err.message}`);
+  }
+
   if (!allPass) {
     console.error('Acceptance suite FAILED');
     process.exit(1);
   }
   console.log('ALL REQUIRED BROWSER ACCEPTANCE TESTS PASSED!');
+
 }
 
 main().catch(e => {

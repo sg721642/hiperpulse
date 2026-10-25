@@ -15,7 +15,7 @@ client = TestClient(app)
 
 
 # ---------------------------------------------------------------------------
-# F05: Both-Patch Exposure Gate Tests
+# Both-Patch Exposure Gate Tests
 # ---------------------------------------------------------------------------
 
 def test_algorithm_version_is_bumped():
@@ -102,7 +102,7 @@ def test_both_patches_exposure_isolated_cases():
 
 
 # ---------------------------------------------------------------------------
-# F06: Camera/Video Reimport and Canonical Signal Hash
+# Camera/Video Reimport and Canonical Signal Hash
 # ---------------------------------------------------------------------------
 
 def test_canonical_signal_hash_invariance_and_sensitivity():
@@ -144,11 +144,11 @@ def test_canonical_signal_hash_invariance_and_sensitivity():
 
 
 # ---------------------------------------------------------------------------
-# F07 & F09: Gemma Deadline Budget and Abuse Protections
+# Gemma Deadline Budget and Abuse Protections
 # ---------------------------------------------------------------------------
 
 def test_unauthenticated_request_rejected_before_analysis(monkeypatch):
-    """F09: Test missing or invalid token rejects with 401 before expensive work."""
+    """Test missing or invalid token rejects with 401 before expensive work."""
     monkeypatch.setenv('GEMINI_API_KEY', 'valid-mock-key')
     monkeypatch.setenv('DEMO_TOKEN', 'strong-private-secret-token')
 
@@ -205,11 +205,11 @@ def test_gemma_timeout_budget_fallback(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# F08: Real Boundary and Quality Gate Isolation Tests
+# Boundary and Quality Gate Isolation Tests
 # ---------------------------------------------------------------------------
 
 def test_exact_7199_7200_7201_frame_boundaries():
-    """F08: Test exact frame count boundaries (7199, 7200, 7201)."""
+    """Test exact frame count boundaries (7199, 7200, 7201)."""
     # 7200 frames over 60.0 seconds gives fs = 120 Hz (within 10-120 Hz and 10-60s)
     t = np.linspace(0, 60.0, 7200).tolist()
     row = [100.0, 110.0, 90.0]
@@ -830,7 +830,7 @@ def test_gemma_malformed_responses_fallback(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# R1: Deterministic Concurrency, Queueing & Monotonic Deadline Suite (12 Tests)
+# Concurrency, Queueing & Monotonic Deadline Suite
 # ---------------------------------------------------------------------------
 
 def test_r1_concurrency_two_simultaneous_requests_both_admitted(monkeypatch):
@@ -996,7 +996,7 @@ def test_r1_queue_timeout_while_waiting_for_semaphore(monkeypatch):
 
 
 def test_r1_timeout_during_signal_recomputation(monkeypatch):
-    """R1-05: Timeout during signal recomputation cleanly returns fallback within budget."""
+    """R1-05: Timeout during signal recomputation returns unavailable response without second synchronous analyze."""
     import app.main as module
     monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
     monkeypatch.setenv('DEMO_TOKEN', 'test-token')
@@ -1004,7 +1004,10 @@ def test_r1_timeout_during_signal_recomputation(monkeypatch):
     monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.05)
 
     original_analyze = module.analyze
+    analyze_calls = 0
     def slow_analyze(*args, **kwargs):
+        nonlocal analyze_calls
+        analyze_calls += 1
         import time as tmod
         tmod.sleep(0.15)
         return original_analyze(*args, **kwargs)
@@ -1013,8 +1016,34 @@ def test_r1_timeout_during_signal_recomputation(monkeypatch):
 
     r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
     assert r.status_code == 200
-    assert r.json()['provider'] == 'deterministic'
-    assert 'timed out' in r.json()['reason'].lower()
+    res = r.json()
+    assert res['provider'] == 'unavailable'
+    assert 'timed out' in res['reason'].lower()
+    assert 'no measurement was made' in res['reason'].lower()
+    # Confirm analyze() was invoked only once by the worker thread, never called synchronously again in fallback
+    assert analyze_calls == 1
+    # Confirm no fabricated BPM or checks in response
+    assert 'bpm' not in res
+    assert 'checks' not in res
+def test_r1_analysis_failure_before_receipt_exists_returns_unavailable(monkeypatch):
+    """Analysis error before receipt exists returns unavailable without fabricating BPM."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+
+    def failing_analyze(*args, **kwargs):
+        raise ValueError('Simulated internal signal analysis error')
+
+    monkeypatch.setattr(module, 'analyze', failing_analyze)
+
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    res = r.json()
+    assert res['provider'] == 'unavailable'
+    assert 'could not be completed' in res['reason'].lower()
+    assert 'bpm' not in res
+    assert 'checks' not in res
 
 
 def test_r1_timeout_during_httpx_post(monkeypatch):
