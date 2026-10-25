@@ -1,12 +1,44 @@
-# HiperPulse — Experimental Camera Heart Rate
+# HiperPulse — Explainable Camera Heart Rate & Open-Weight Signal Intelligence
 
-**Evidence before estimates.** An experimental, evidence-first, browser-based pulse signal analysis prototype.
+[![CI](https://github.com/sg721642/hiperpulse/actions/workflows/ci.yml/badge.svg)](https://github.com/sg721642/hiperpulse/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
+[![Python: 3.12](https://img.shields.io/badge/Python-3.12-3ee89f.svg)](requirements-lock.txt)
+[![Model: Gemma 4](https://img.shields.io/badge/AI-Gemma_4_(26B--A4B)--IT-blue.svg)](https://ai.google.dev/)
+[![Deployment: DigitalOcean Ready](https://img.shields.io/badge/Deploy-DigitalOcean_Ready-0080FF.svg)](deploy/digitalocean/app.yaml)
+
+**Evidence before estimates.** An experimental, evidence-first, browser-based pulse signal analysis prototype developed for **Hacktoberfest Hack Day KodeKurrent S2 Jais × Open Science Labs**.
+
+> **🌐 LIVE INTERACTIVE DEMO:** [european-motion-milwaukee-charger.trycloudflare.com](https://european-motion-milwaukee-charger.trycloudflare.com)  
+> **🔑 DEMO ACCESS KEY:** `hiperpulse`
 
 > **IMPORTANT:** Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.
+
+---
+
+### 🏆 Hackathon Challenge Tracks
+
+1. **Best Open-Source AI Project (Build with DigitalOcean):** 
+   - 100% transparent, open-source under permissive MIT license.
+   - Micro-footprint container architecture ready for DigitalOcean App Platform (`deploy/digitalocean/app.yaml`).
+   - 101 automated Python unit tests, 17 browser acceptance tests, and continuous integration workflow.
+2. **Best Use of Gemma 4:**
+   - Powered by Google DeepMind's open-weight `gemma-4-26b-a4b-it` multimodal reasoning model.
+   - Interprets optical telemetry, harmonic frequencies, and noise artifacts into human-readable scientific commentary.
+   - Strict architectural guardrail: Gemma explains calculated evidence; it never hallucinates pulse numbers or diagnoses.
+
+---
 
 ## Core Workflow
 
 Camera recording / local video / synthetic sample / JSON trace → timestamped two-patch RGB signals → GREEN signal-processing baseline → pulse-like waveform and spectrum → transparent quality checks → estimated BPM only when all required gates pass → evidence receipt → Gemma 4 explanation of calculated results.
+
+## Key Technical Innovations
+
+- **100% Client-Side Privacy:** Zero raw camera video or facial imagery leaves the browser. Only micro-averaged RGB color channels ($320 \times 240$ bilateral spatial binning) are processed.
+- **14-Gate Signal Integrity Console:** Evaluates duration, sample rate, timing variation, skin luminance exposure ($[20, 235]$), pixel clipping, spectral peak concentration ($\ge 0.40$), bilateral cheek consensus ($\le 8.0\text{ BPM}$), and cross-estimator agreement ($\le 10.0\text{ BPM}$).
+- **Honest Null Withholding (`BPM: null`):** Refuses to hallucinate heart rate numbers when optical noise, lighting flicker, or motion corruption violates scientific thresholds.
+- **Challenge Lab:** Interactive stress-test suite simulating camera stutters, illumination conflicts, and shadows to prove robust rejection of corrupted signals.
+- **Verifiable SHA-256 Receipts:** Every session generates an immutable cryptographic receipt enabling third-party audit and reproducible evaluation.
 
 ## Prerequisites
 
