@@ -526,16 +526,115 @@ async function main() {
                                 retakeCmp.includes('Score: 64% → 100% (+36 percentage points)') &&
                                 retakeCmp.includes('Quality score reflects the percentage of heuristic signal checks passed');
 
-      // Verify canvas overlay functions with disparate array lengths (450 vs 455 points) and gap handling
+      // Verify canvas overlay functions with disparate array lengths (450 vs 455 points), timing-gap segmentation & unequal spectrum coordinates
       const overlayCheck = await client.eval(`(() => {
         try {
+          const canvasWave = $('wave');
+          const ctxWave = canvasWave.getContext('2d');
+          const origMoveToWave = ctxWave.moveTo;
+          const origLineToWave = ctxWave.lineTo;
+
+          const waveCalls = [];
+          ctxWave.moveTo = function(x, y) {
+            waveCalls.push({ type: 'moveTo', x, y, dash: ctxWave.getLineDash() });
+            return origMoveToWave.apply(this, arguments);
+          };
+          ctxWave.lineTo = function(x, y) {
+            waveCalls.push({ type: 'lineTo', x, y, dash: ctxWave.getLineDash() });
+            return origLineToWave.apply(this, arguments);
+          };
+
+          // 1. Waveform overlay: 450 original vs 455 transformed points with 0.35s timing gap at index 228
           const xs1 = Array.from({ length: 450 }, (_, i) => i * (30 / 450));
           const ys1 = xs1.map(x => Math.sin(2 * Math.PI * 1.2 * x));
-          const xs2 = Array.from({ length: 455 }, (_, i) => i * (30 / 455) + (i > 227 ? 0.35 : 0));
+          const xs2 = Array.from({ length: 455 }, (_, i) => i * (30 / 455) + (i >= 228 ? 0.35 : 0));
           const ys2 = xs2.map(x => Math.cos(2 * Math.PI * 1.2 * x));
           plotOverlay('wave', xs1, ys1, xs2, ys2, '#8ae8c4', '#f1cc8b');
-          const canvas = $('wave');
-          return { ok: true, width: canvas.width, height: canvas.height };
+
+          // Restore waveform context
+          ctxWave.moveTo = origMoveToWave;
+          ctxWave.lineTo = origLineToWave;
+
+          const waveSolidCalls = waveCalls.filter(c => !c.dash || c.dash.length === 0);
+          const waveDashedCalls = waveCalls.filter(c => c.dash && c.dash.length > 0);
+
+          // In plotOverlay, 5 grid lines are drawn first (5 moveTo + 5 lineTo = 10 calls)
+          const waveGridCalls = waveSolidCalls.slice(0, 10);
+          const waveCurve1Calls = waveSolidCalls.slice(10);
+          const waveCurve2Calls = waveDashedCalls;
+
+          const waveCurve1MoveTos = waveCurve1Calls.filter(c => c.type === 'moveTo');
+          const waveCurve1LineTos = waveCurve1Calls.filter(c => c.type === 'lineTo');
+          const waveCurve2MoveTos = waveCurve2Calls.filter(c => c.type === 'moveTo');
+          const waveCurve2LineTos = waveCurve2Calls.filter(c => c.type === 'lineTo');
+
+          const waveAllFinite = waveCalls.every(c => Number.isFinite(c.x) && Number.isFinite(c.y));
+          const waveCurve1Start = waveCurve1Calls[0];
+          const waveCurve1End = waveCurve1Calls[waveCurve1Calls.length - 1];
+          const waveCurve2Start = waveCurve2Calls[0];
+          const waveCurve2End = waveCurve2Calls[waveCurve2Calls.length - 1];
+
+          // 2. Spectrum overlay: Unequal-length spectrum coordinates (150 vs 175 points)
+          const canvasSpec = $('spectrum');
+          const ctxSpec = canvasSpec.getContext('2d');
+          const origMoveToSpec = ctxSpec.moveTo;
+          const origLineToSpec = ctxSpec.lineTo;
+
+          const specCalls = [];
+          ctxSpec.moveTo = function(x, y) {
+            specCalls.push({ type: 'moveTo', x, y, dash: ctxSpec.getLineDash() });
+            return origMoveToSpec.apply(this, arguments);
+          };
+          ctxSpec.lineTo = function(x, y) {
+            specCalls.push({ type: 'lineTo', x, y, dash: ctxSpec.getLineDash() });
+            return origLineToSpec.apply(this, arguments);
+          };
+
+          const specXs1 = Array.from({ length: 150 }, (_, i) => 40 + i * (180 / 150));
+          const specYs1 = specXs1.map(x => Math.exp(-Math.pow((x - 72) / 10, 2)));
+          const specXs2 = Array.from({ length: 175 }, (_, i) => 40 + i * (180 / 175));
+          const specYs2 = specXs2.map(x => Math.exp(-Math.pow((x - 75) / 12, 2)));
+          plotOverlay('spectrum', specXs1, specYs1, specXs2, specYs2, '#8ae8c4', '#f1cc8b');
+
+          // Restore spectrum context
+          ctxSpec.moveTo = origMoveToSpec;
+          ctxSpec.lineTo = origLineToSpec;
+
+          const specSolidCalls = specCalls.filter(c => !c.dash || c.dash.length === 0);
+          const specDashedCalls = specCalls.filter(c => c.dash && c.dash.length > 0);
+          const specCurve1Calls = specSolidCalls.slice(10);
+          const specCurve2Calls = specDashedCalls;
+          const specAllFinite = specCalls.every(c => Number.isFinite(c.x) && Number.isFinite(c.y));
+
+          const valid = Boolean(
+            waveAllFinite &&
+            specAllFinite &&
+            waveCurve1Calls.length === 450 &&
+            waveCurve1MoveTos.length === 1 &&
+            waveCurve1LineTos.length === 449 &&
+            waveCurve2Calls.length === 455 &&
+            waveCurve2MoveTos.length === 2 && // pen lifted across > 0.25s timing gap!
+            waveCurve2LineTos.length === 453 &&
+            Number.isFinite(waveCurve1Start?.x) && Number.isFinite(waveCurve1Start?.y) &&
+            Number.isFinite(waveCurve1End?.x) && Number.isFinite(waveCurve1End?.y) &&
+            Number.isFinite(waveCurve2Start?.x) && Number.isFinite(waveCurve2Start?.y) &&
+            Number.isFinite(waveCurve2End?.x) && Number.isFinite(waveCurve2End?.y) &&
+            specCurve1Calls.length === 150 &&
+            specCurve2Calls.length === 175
+          );
+
+          return {
+            ok: valid,
+            waveCurve1Count: waveCurve1Calls.length,
+            waveCurve2Count: waveCurve2Calls.length,
+            waveCurve2MoveTos: waveCurve2MoveTos.length,
+            specCurve1Count: specCurve1Calls.length,
+            specCurve2Count: specCurve2Calls.length,
+            waveCurve1Endpoints: { startX: waveCurve1Start?.x, endX: waveCurve1End?.x },
+            waveCurve2Endpoints: { startX: waveCurve2Start?.x, endX: waveCurve2End?.x },
+            waveAllFinite,
+            specAllFinite
+          };
         } catch (e) {
           return { ok: false, error: e.message };
         }
@@ -550,9 +649,9 @@ async function main() {
       const comparisonText = await client.eval(`$('comparison').textContent`);
       const baseBpmAfterStress = await client.eval(`$('bpm').textContent`);
       if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72' && retakeCmpVerified && overlayCheck.ok) {
-        recordResult('T06', 'PASS', 'Guided retake delta (+36 percentage points), stress comparison & canvas overlay verified');
+        recordResult('T06', 'PASS', `Guided retake delta (+36 percentage points), stress comparison & canvas overlay verified (450 vs 455 wave points, gap segmentation, ${overlayCheck.specCurve1Count} vs ${overlayCheck.specCurve2Count} spec points)`);
       } else {
-        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, overlayOk=${overlayCheck?.ok}, comp=${comparisonText.slice(0, 50)}`);
+        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, overlayOk=${overlayCheck?.ok}, details=${JSON.stringify(overlayCheck)}, comp=${comparisonText.slice(0, 50)}`);
       }
     } catch (e) { recordResult('T06', 'FAIL', e.message); }
 

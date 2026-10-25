@@ -5,7 +5,8 @@ Validates:
   - Account model discovery: gemma-4-26b-a4b-it supports generateContent
   - Test A: Clean synthetic sample (72 BPM, 100% checks) -> Real Gemma 4 commentary
   - Test B: Failed-quality artifact sample (BPM null, 86% checks) -> Real Gemma 4 withholding explanation
-  - Test C: Security gates (missing/invalid password 401, cooldown fallback)
+  - Test C: Security gates (missing/invalid demo token 401)
+  (Server cooldown enforcement is authoritatively validated by deterministic unit tests in tests/test_audit_remediation.py)
 
 Never outputs credentials or API keys.
 """
@@ -94,33 +95,10 @@ print(f'Missing token status: {no_token_r.status_code} (detail: {no_token_r.json
 assert no_token_r.status_code == 401
 print('✓ Unauthorized request without token correctly rejected with HTTP 401.')
 
-# C.3 Cooldown gate returns deterministic fallback (<10s)
-# Dispatch first request and immediately dispatch a second request to test cooldown
-# independently of external provider response latency.
-print('Testing cooldown fallback...')
-time.sleep(15)  # clear previous cooldown
-import concurrent.futures
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-    f1 = executor.submit(lambda: httpx.post(
-        'http://127.0.0.1:8080/api/explain', json=sample_clean,
-        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=95
-    ))
-    time.sleep(0.15)  # ensure initial request has entered server lock
-    f2 = executor.submit(lambda: httpx.post(
-        'http://127.0.0.1:8080/api/explain', json=sample_clean,
-        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=15
-    ))
-    r2 = f2.result()
-    r1 = f1.result()
-
-print(f'Initial call status: {r1.status_code}, provider: {r1.json().get("provider")}')
-print(f'Second call status: {r2.status_code}, provider: {r2.json().get("provider")}, reason: {r2.json().get("reason")}')
-assert r2.status_code == 200
-assert r2.json().get('provider') == 'deterministic'
-assert 'AI cooldown: wait ten seconds' in r2.json().get('reason', '')
-print('✓ Cooldown fallback verified successfully on concurrent request within cooldown interval.')
+# Note: Cooldown logic is tested deterministically in tests/test_audit_remediation.py
+print('\nNote: Server cooldown enforcement is authoritatively validated by deterministic unit tests in tests/test_audit_remediation.py.')
 
 print('\n======================================================')
 print('ALL LIVE GEMMA 4 INTEGRATION TESTS PASSED SUCCESSFULLY')
 print('======================================================')
+

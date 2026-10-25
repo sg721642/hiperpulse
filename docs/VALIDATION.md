@@ -46,7 +46,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
     3. Clean synthetic sample: 72 BPM, 100% checklist (14/14 checks passed), `accepted_experimental`.
     4. Artifact synthetic sample: BPM null, 86% checklist, status `insufficient_quality`, verified Guided Retake action advice rendering.
     5. Flat synthetic sample: BPM null, 64% checklist, status `insufficient_quality`, verified Challenge C on flat baseline triggers the `CRITICAL SCIENTIFIC LIMITATION OBSERVED` analysis notice.
-    6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates); verified Guided Retake comparison calculates score delta `(+36 percentage points)` (not relative percentage) and gate improvements; verified canvas plot overlay handles disparate point lengths (450 vs 455 points) with gap-lifting.
+    6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates); verified Guided Retake comparison calculates score delta `(+36 percentage points)` (not relative percentage) and gate improvements; verified canvas plot overlay handles disparate point lengths (450 vs 455 points) with gap-lifting, asserting actual finite canvas coordinates, original/transformed endpoints, 450-vs-455 waveform points, timing-gap segmentation, and unequal-length spectrum coordinates (150 vs 175 points).
     7. Evidence receipt & trace reimport: Real CDP file download of trace and judge evidence card to disk; reimport produces deterministic `signal_sha256` match, identical 72 BPM / 100% output, `provenance_note` documenting 5-decimal canonical hash rounding, `is_synthetic === true`; verified 8 distinct provenance card scenarios classifying unauthenticated camera/video JSON imports as `declared_not_authenticated` with `unverified_origin: true`.
     8. Camera lifecycle & stop/discard: Capturing from camera, clicking Stop cleanly stops all MediaStream tracks and discards incomplete trace without submitting to backend.
     9. Tab-hide visibility interruption: Dispatching `visibilitychange` (`hidden`) aborts active capture and clears buffer to prevent stale estimation.
@@ -60,7 +60,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
     17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
 
 - **Negative Regression Verification:** `TEST_NEGATIVE_TIMEOUT=1` verified to specifically isolate forced timeout on T11 while T01-T10 and T12, T17 pass; parsed and asserted via machine-readable structured summary JSON.
-- **Live Script Verification:** `scripts/verify_gemma_live.py` verified using concurrent dispatch via `ThreadPoolExecutor` (`f1` live request + `f2` 0.15s dispatch caught by lock window), asserting `'AI cooldown: wait ten seconds'` with HTTP 200 and deterministic provider independently of external provider latency.
+- **Live Script Verification:** `scripts/verify_gemma_live.py` validates genuine live Gemma 4 explanations and HTTP 401 token enforcement; cooldown logic is authoritatively tested via the 3 deterministic mocked unit tests in `tests/test_audit_remediation.py`.
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 

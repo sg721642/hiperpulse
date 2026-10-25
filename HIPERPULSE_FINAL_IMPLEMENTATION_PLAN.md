@@ -738,17 +738,17 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - **R2 (Artifact Challenge Overlay Separate X/Y Axes):** Refactored `plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2)` in `web/app.js` to compute shared domain bounds `[xMin, xMax]` and `[low, high]` and plot each curve against its own timestamps/frequencies with `Number.isFinite` checks, eliminating `NaN` coordinates and canvas draw errors for disparate array lengths (e.g. 450 vs 455 points in Challenge A).
     - **R3 (Source & Ingestion Labels & Evidence Provenance):** Refined `render(r)` in `web/app.js` to distinguish source declaration from ingestion method (`IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN`, `IMPORTED TRACE · DECLARED CAMERA ORIGIN`, `IMPORTED TRACE · DECLARED VIDEO ORIGIN`, `SAMPLE · ORIGIN UNVERIFIED`, `LIVE CAMERA · EXPERIMENTAL`, `LOCAL VIDEO · ORIGIN UNVERIFIED`). Updated `evidenceCard` to mark generic sample as `is_synthetic: false`, set `unverified_origin: true`, and document 5-decimal canonical hash rounding in `provenance_note`.
     - **R4 (Strict Release Mode & verify_gemma_live.py Cooldown Assertion):** Added `REQUIRE_LIVE_AI=1` strict release mode in `scripts/test_browser_acceptance.js` that fails closed if credentials, demo token, model `gemma-4-26b-a4b-it`, or live Gemma response are missing or fallback to deterministic. Fixed `scripts/verify_gemma_live.py` lines 97–106 to immediately make a second call `r2` within 10s and assert `'AI cooldown: wait ten seconds'` is returned with HTTP 200 and deterministic provider.
-    - **R5 (Strengthen Product Differentiators & Flat Challenge C):** Added automated browser checks for complete Guided Retake cycle (poor -> retake advice -> improved trace -> delta score comparison `+36%`) and Challenge C flat baseline scenario exhibiting optical rPPG false-consensus limitation without threshold alterations. Added Python unit test `test_challenge_c_optical_flicker_on_flat_baseline_demonstrates_limitation`.
-    - **R6 (CI Lockfile Standardization & Negative Timeout Assertion):** Standardized `.github/workflows/ci.yml` on `pip install -r requirements-lock.txt` across all jobs to match Dockerfile. Added automated step verifying that `TEST_NEGATIVE_TIMEOUT=1` exits with non-zero code. Reconciled documentation across     - **Milestone I (Final Pre-UI Engineering Verification & Professional Polish):** VERIFIED.
+    - **R6 (CI Lockfile Standardization & Negative Timeout Assertion):** Standardized `.github/workflows/ci.yml` on `pip install -r requirements-lock.txt` across all jobs to match Dockerfile. Added automated step verifying that `TEST_NEGATIVE_TIMEOUT=1` exits with non-zero code. Reconciled documentation across markdown files.
+  - **Milestone I (Final Pre-UI Engineering Verification & Professional Polish):** VERIFIED.
     - **True Deadline Fallback Safety:** Refactored `/api/explain` in `app/main.py` so that when recomputation times out or errors before a receipt exists, it returns a controlled `unavailable` response rather than executing an unbounded synchronous `analyze()` call outside the timeout scope. Added unit test `test_r1_analysis_failure_before_receipt_exists_returns_unavailable`.
     - **Structured Negative Timeout CI Assertion:** Enhanced `scripts/test_browser_acceptance.js` to write machine-readable summary JSON and updated `.github/workflows/ci.yml` to parse and assert that T11 failed specifically due to forced timeout while all other mandatory tests passed.
     - **Repository Cleanup & Comment Polish:** Removed conversational F-tags and redundant comments from source and test files. Synchronized version badge (`v1.1`) and architectural decisions (D01–D27).
   - **Milestone J (Final Astra Re-Audit Corrections & CI Stability):** VERIFIED.
-    - **Fix 1 (Live Gemma Cooldown Decoupling & Unit Tests):** Refactored cooldown assertion in `scripts/verify_gemma_live.py` to use `ThreadPoolExecutor` concurrent dispatch (`f1` initial request + `f2` 0.15s dispatch within lock window), eliminating false failures from live upstream API latency. Added 3 isolated mocked cooldown tests in `tests/test_audit_remediation.py` (`test_cooldown_request_inside_window_returns_deterministic_fallback`, `test_cooldown_request_after_window_proceeds`, `test_cooldown_slow_provider_response_cooldown_starts_at_lock_entry`). Suite expanded to 94 tests.
+    - **Fix 1 (Live Gemma Verification Decoupling & Unit Tests):** In `scripts/verify_gemma_live.py`, removed the live cooldown assertion that relied on `time.sleep(0.15)` to guarantee request admission order, preserving live Gemma explanation and authentication tests. Relied on the 3 deterministic mocked cooldown unit tests in `tests/test_audit_remediation.py` as authoritative (`test_cooldown_request_inside_window_returns_deterministic_fallback`, `test_cooldown_request_after_window_proceeds`, `test_cooldown_slow_provider_response_cooldown_starts_at_lock_entry`). Suite expanded to 94 tests.
     - **Fix 2 (Browser Acceptance Startup Hardening & CI Diagnostics):** Enhanced `scripts/test_browser_acceptance.js` with `launchBrowserWithRetry` (2 attempts), piped and sanitized stderr ring buffer, child exit detection, CDP `/json/version` polling readiness, `/json/new` target creation fallback, and dynamic CDP port fallback. Added artifact upload step in `.github/workflows/ci.yml` capturing `test-results/browser-startup-diagnostics.json` if startup fails.
     - **Fix 3 (Documentation & Historical Provenance Correction):** Replaced typographical SHA `3c790d0bcece7a7b8e1f0e4b8ee34681577ffcba` with exact git commit SHA `3c790d088b4345b62c6017101c51a1002309b427` (CI run `40151348462`). Accurately documented offline browser test counts as 13 passed, 4 skipped (17 registered/accounted for). Documented both historical runs at `fdb86b8` (`40151615140` PASS and `40151612925` browser startup failure).
     - **Fix 4 (Judge Evidence Card Honest Provenance Classification):** Added explicit 8-scenario provenance matrix in `web/app.js` and `scripts/test_browser_acceptance.js`. Unauthenticated trace imports from camera/video receive `unverified_origin: true` and `provenance_status: 'declared_not_authenticated'`. Verified downloaded evidence card and trace files from disk.
-    - **Fix 5 (Guided Retake Percentage Points Clarification & Canvas Overlay Robustness):** Updated retake comparison delta string to `(+X percentage points)` or `(-X percentage points)` with disclaimer. In `plotOverlay`, prevented call-stack overflows with loop-based bound calculations and lifted pen across timing gaps (`> 0.25s`) on waveform overlay. Verified disparate point lengths (450 vs 455 points).
+    - **Fix 5 (Guided Retake Percentage Points Clarification & Canvas Overlay Robustness):** Updated retake comparison delta string to `(+X percentage points)` or `(-X percentage points)` with disclaimer. In `plotOverlay`, prevented call-stack overflows with loop-based bound calculations and lifted pen across timing gaps (`> 0.25s`) on waveform overlay. In browser acceptance T06, asserted actual finite canvas coordinates, original/transformed endpoints, 450-vs-455 waveform points, timing-gap segmentation, and unequal-length spectrum coordinates (150 vs 175 points).
     - **Fix 6 (Deterministic Concurrency & Cancellation Tests):** Replaced arbitrary sleep delays in `tests/test_audit_remediation.py` with `asyncio.Event` barriers across `test_r1_cancelled_task_releases_semaphore`, `test_r1_concurrency_simultaneous_requests_admitted`, and `test_r1_concurrency_max_active_provider_calls_strictly_bounded`.
     - **Fix 7 (Source & Repository Hygiene):** Zero required files deleted; zero secrets in Git; clean professional engineering documentation.
   - **Automated Test Status:** **94 / 94 Python tests passing** in 7.17s; **13 passed, 4 skipped (17 registered/accounted for)** in offline browser acceptance tests (17 / 17 passed when live AI configured and consent granted); structured negative timeout regression verified.
@@ -761,9 +761,12 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commit: `3c790d088b4345b62c6017101c51a1002309b427`.
-- Audited commit: `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`.
-- GitHub Actions CI runs: `40151348462` (all 3 jobs green on `3c790d088b4`), `40151615140` (all 3 jobs green on `fdb86b8`), run `40151612925` (browser startup failure investigated and resolved via Fix 2).
+- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427` and `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`.
+- Latest audited baseline: `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
+- GitHub Actions CI runs:
+  - Run [`40153753168`](https://github.com/sg721642/hiperpulse/actions/runs/40153753168) on `main` at `8ac073d`: ALL 3 JOBS PASSED (Build, Lint & Test: 1m1s; Docker Build & Smoke: 28s; Offline Browser Acceptance: 2m17s — 13 PASS, 4 SKIP).
+  - Run [`40153755537`](https://github.com/sg721642/hiperpulse/actions/runs/40153755537) on `remediation/audit-hardening` at `8ac073d`: ALL 3 JOBS PASSED (Build, Lint & Test: 59s; Docker Build & Smoke: 24s; Offline Browser Acceptance: 2m3s — 13 PASS, 4 SKIP).
+  - Historical runs: `40151348462` (all 3 jobs green on `3c790d088b4`), `40151615140` (all 3 jobs green on `fdb86b8`), run `40151612925` (browser startup failure investigated and resolved via Fix 2).
 - All technical fixes and verification gaps completed and verified.
 
 ## Mandatory Release Gates
@@ -875,7 +878,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
     3. Clean synthetic sample: 72 BPM, 100% checklist (14/14 checks passed), `accepted_experimental`.
     4. Artifact synthetic sample: BPM null, 86% checklist, status `insufficient_quality`, verified Guided Retake action advice rendering.
     5. Flat synthetic sample: BPM null, 64% checklist, status `insufficient_quality`, verified Challenge C on flat baseline triggers the `CRITICAL SCIENTIFIC LIMITATION OBSERVED` analysis notice.
-    6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates); verified Guided Retake comparison calculates score delta `(+36 percentage points)` (not relative percentage) and gate improvements; verified canvas plot overlay handles disparate point lengths (450 vs 455 points) with gap-lifting.
+    6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates); verified Guided Retake comparison calculates score delta `(+36 percentage points)` (not relative percentage) and gate improvements; verified canvas plot overlay handles disparate point lengths (450 vs 455 points) with gap-lifting, asserting actual finite canvas coordinates, original/transformed endpoints, 450-vs-455 waveform points, timing-gap segmentation, and unequal-length spectrum coordinates (150 vs 175 points).
     7. Evidence receipt & trace reimport: Real CDP file download of trace and judge evidence card to disk; reimport produces deterministic `signal_sha256` match, identical 72 BPM / 100% output, `provenance_note` documenting 5-decimal canonical hash rounding, `is_synthetic === true`; verified 8 distinct provenance card scenarios classifying unauthenticated camera/video JSON imports as `declared_not_authenticated` with `unverified_origin: true`.
     8. Camera lifecycle & stop/discard: Capturing from camera, clicking Stop cleanly stops all MediaStream tracks and discards incomplete trace without submitting to backend.
     9. Tab-hide visibility interruption: Dispatching `visibilitychange` (`hidden`) aborts active capture and clears buffer to prevent stale estimation.
@@ -889,7 +892,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
     17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
 
 - **Negative Regression Verification:** `TEST_NEGATIVE_TIMEOUT=1` verified to specifically isolate forced timeout on T11 while T01-T10 and T12, T17 pass; parsed and asserted via machine-readable structured summary JSON.
-- **Live Script Verification:** `scripts/verify_gemma_live.py` verified using concurrent dispatch via `ThreadPoolExecutor` (`f1` live request + `f2` 0.15s dispatch caught by lock window), asserting `'AI cooldown: wait ten seconds'` with HTTP 200 and deterministic provider independently of external provider latency.
+- **Live Script Verification:** `scripts/verify_gemma_live.py` validates genuine live Gemma 4 explanations and HTTP 401 token enforcement; cooldown logic is authoritatively tested via the 3 deterministic mocked unit tests in `tests/test_audit_remediation.py`.
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
@@ -2786,16 +2789,115 @@ async function main() {
                                 retakeCmp.includes('Score: 64% → 100% (+36 percentage points)') &&
                                 retakeCmp.includes('Quality score reflects the percentage of heuristic signal checks passed');
 
-      // Verify canvas overlay functions with disparate array lengths (450 vs 455 points) and gap handling
+      // Verify canvas overlay functions with disparate array lengths (450 vs 455 points), timing-gap segmentation & unequal spectrum coordinates
       const overlayCheck = await client.eval(`(() => {
         try {
+          const canvasWave = $('wave');
+          const ctxWave = canvasWave.getContext('2d');
+          const origMoveToWave = ctxWave.moveTo;
+          const origLineToWave = ctxWave.lineTo;
+
+          const waveCalls = [];
+          ctxWave.moveTo = function(x, y) {
+            waveCalls.push({ type: 'moveTo', x, y, dash: ctxWave.getLineDash() });
+            return origMoveToWave.apply(this, arguments);
+          };
+          ctxWave.lineTo = function(x, y) {
+            waveCalls.push({ type: 'lineTo', x, y, dash: ctxWave.getLineDash() });
+            return origLineToWave.apply(this, arguments);
+          };
+
+          // 1. Waveform overlay: 450 original vs 455 transformed points with 0.35s timing gap at index 228
           const xs1 = Array.from({ length: 450 }, (_, i) => i * (30 / 450));
           const ys1 = xs1.map(x => Math.sin(2 * Math.PI * 1.2 * x));
-          const xs2 = Array.from({ length: 455 }, (_, i) => i * (30 / 455) + (i > 227 ? 0.35 : 0));
+          const xs2 = Array.from({ length: 455 }, (_, i) => i * (30 / 455) + (i >= 228 ? 0.35 : 0));
           const ys2 = xs2.map(x => Math.cos(2 * Math.PI * 1.2 * x));
           plotOverlay('wave', xs1, ys1, xs2, ys2, '#8ae8c4', '#f1cc8b');
-          const canvas = $('wave');
-          return { ok: true, width: canvas.width, height: canvas.height };
+
+          // Restore waveform context
+          ctxWave.moveTo = origMoveToWave;
+          ctxWave.lineTo = origLineToWave;
+
+          const waveSolidCalls = waveCalls.filter(c => !c.dash || c.dash.length === 0);
+          const waveDashedCalls = waveCalls.filter(c => c.dash && c.dash.length > 0);
+
+          // In plotOverlay, 5 grid lines are drawn first (5 moveTo + 5 lineTo = 10 calls)
+          const waveGridCalls = waveSolidCalls.slice(0, 10);
+          const waveCurve1Calls = waveSolidCalls.slice(10);
+          const waveCurve2Calls = waveDashedCalls;
+
+          const waveCurve1MoveTos = waveCurve1Calls.filter(c => c.type === 'moveTo');
+          const waveCurve1LineTos = waveCurve1Calls.filter(c => c.type === 'lineTo');
+          const waveCurve2MoveTos = waveCurve2Calls.filter(c => c.type === 'moveTo');
+          const waveCurve2LineTos = waveCurve2Calls.filter(c => c.type === 'lineTo');
+
+          const waveAllFinite = waveCalls.every(c => Number.isFinite(c.x) && Number.isFinite(c.y));
+          const waveCurve1Start = waveCurve1Calls[0];
+          const waveCurve1End = waveCurve1Calls[waveCurve1Calls.length - 1];
+          const waveCurve2Start = waveCurve2Calls[0];
+          const waveCurve2End = waveCurve2Calls[waveCurve2Calls.length - 1];
+
+          // 2. Spectrum overlay: Unequal-length spectrum coordinates (150 vs 175 points)
+          const canvasSpec = $('spectrum');
+          const ctxSpec = canvasSpec.getContext('2d');
+          const origMoveToSpec = ctxSpec.moveTo;
+          const origLineToSpec = ctxSpec.lineTo;
+
+          const specCalls = [];
+          ctxSpec.moveTo = function(x, y) {
+            specCalls.push({ type: 'moveTo', x, y, dash: ctxSpec.getLineDash() });
+            return origMoveToSpec.apply(this, arguments);
+          };
+          ctxSpec.lineTo = function(x, y) {
+            specCalls.push({ type: 'lineTo', x, y, dash: ctxSpec.getLineDash() });
+            return origLineToSpec.apply(this, arguments);
+          };
+
+          const specXs1 = Array.from({ length: 150 }, (_, i) => 40 + i * (180 / 150));
+          const specYs1 = specXs1.map(x => Math.exp(-Math.pow((x - 72) / 10, 2)));
+          const specXs2 = Array.from({ length: 175 }, (_, i) => 40 + i * (180 / 175));
+          const specYs2 = specXs2.map(x => Math.exp(-Math.pow((x - 75) / 12, 2)));
+          plotOverlay('spectrum', specXs1, specYs1, specXs2, specYs2, '#8ae8c4', '#f1cc8b');
+
+          // Restore spectrum context
+          ctxSpec.moveTo = origMoveToSpec;
+          ctxSpec.lineTo = origLineToSpec;
+
+          const specSolidCalls = specCalls.filter(c => !c.dash || c.dash.length === 0);
+          const specDashedCalls = specCalls.filter(c => c.dash && c.dash.length > 0);
+          const specCurve1Calls = specSolidCalls.slice(10);
+          const specCurve2Calls = specDashedCalls;
+          const specAllFinite = specCalls.every(c => Number.isFinite(c.x) && Number.isFinite(c.y));
+
+          const valid = Boolean(
+            waveAllFinite &&
+            specAllFinite &&
+            waveCurve1Calls.length === 450 &&
+            waveCurve1MoveTos.length === 1 &&
+            waveCurve1LineTos.length === 449 &&
+            waveCurve2Calls.length === 455 &&
+            waveCurve2MoveTos.length === 2 && // pen lifted across > 0.25s timing gap!
+            waveCurve2LineTos.length === 453 &&
+            Number.isFinite(waveCurve1Start?.x) && Number.isFinite(waveCurve1Start?.y) &&
+            Number.isFinite(waveCurve1End?.x) && Number.isFinite(waveCurve1End?.y) &&
+            Number.isFinite(waveCurve2Start?.x) && Number.isFinite(waveCurve2Start?.y) &&
+            Number.isFinite(waveCurve2End?.x) && Number.isFinite(waveCurve2End?.y) &&
+            specCurve1Calls.length === 150 &&
+            specCurve2Calls.length === 175
+          );
+
+          return {
+            ok: valid,
+            waveCurve1Count: waveCurve1Calls.length,
+            waveCurve2Count: waveCurve2Calls.length,
+            waveCurve2MoveTos: waveCurve2MoveTos.length,
+            specCurve1Count: specCurve1Calls.length,
+            specCurve2Count: specCurve2Calls.length,
+            waveCurve1Endpoints: { startX: waveCurve1Start?.x, endX: waveCurve1End?.x },
+            waveCurve2Endpoints: { startX: waveCurve2Start?.x, endX: waveCurve2End?.x },
+            waveAllFinite,
+            specAllFinite
+          };
         } catch (e) {
           return { ok: false, error: e.message };
         }
@@ -2810,9 +2912,9 @@ async function main() {
       const comparisonText = await client.eval(`$('comparison').textContent`);
       const baseBpmAfterStress = await client.eval(`$('bpm').textContent`);
       if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72' && retakeCmpVerified && overlayCheck.ok) {
-        recordResult('T06', 'PASS', 'Guided retake delta (+36 percentage points), stress comparison & canvas overlay verified');
+        recordResult('T06', 'PASS', `Guided retake delta (+36 percentage points), stress comparison & canvas overlay verified (450 vs 455 wave points, gap segmentation, ${overlayCheck.specCurve1Count} vs ${overlayCheck.specCurve2Count} spec points)`);
       } else {
-        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, overlayOk=${overlayCheck?.ok}, comp=${comparisonText.slice(0, 50)}`);
+        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, overlayOk=${overlayCheck?.ok}, details=${JSON.stringify(overlayCheck)}, comp=${comparisonText.slice(0, 50)}`);
       }
     } catch (e) { recordResult('T06', 'FAIL', e.message); }
 
@@ -3313,7 +3415,8 @@ Validates:
   - Account model discovery: gemma-4-26b-a4b-it supports generateContent
   - Test A: Clean synthetic sample (72 BPM, 100% checks) -> Real Gemma 4 commentary
   - Test B: Failed-quality artifact sample (BPM null, 86% checks) -> Real Gemma 4 withholding explanation
-  - Test C: Security gates (missing/invalid password 401, cooldown fallback)
+  - Test C: Security gates (missing/invalid demo token 401)
+  (Server cooldown enforcement is authoritatively validated by deterministic unit tests in tests/test_audit_remediation.py)
 
 Never outputs credentials or API keys.
 """
@@ -3402,32 +3505,8 @@ print(f'Missing token status: {no_token_r.status_code} (detail: {no_token_r.json
 assert no_token_r.status_code == 401
 print('✓ Unauthorized request without token correctly rejected with HTTP 401.')
 
-# C.3 Cooldown gate returns deterministic fallback (<10s)
-# Dispatch first request and immediately dispatch a second request to test cooldown
-# independently of external provider response latency.
-print('Testing cooldown fallback...')
-time.sleep(15)  # clear previous cooldown
-import concurrent.futures
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-    f1 = executor.submit(lambda: httpx.post(
-        'http://127.0.0.1:8080/api/explain', json=sample_clean,
-        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=95
-    ))
-    time.sleep(0.15)  # ensure initial request has entered server lock
-    f2 = executor.submit(lambda: httpx.post(
-        'http://127.0.0.1:8080/api/explain', json=sample_clean,
-        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=15
-    ))
-    r2 = f2.result()
-    r1 = f1.result()
-
-print(f'Initial call status: {r1.status_code}, provider: {r1.json().get("provider")}')
-print(f'Second call status: {r2.status_code}, provider: {r2.json().get("provider")}, reason: {r2.json().get("reason")}')
-assert r2.status_code == 200
-assert r2.json().get('provider') == 'deterministic'
-assert 'AI cooldown: wait ten seconds' in r2.json().get('reason', '')
-print('✓ Cooldown fallback verified successfully on concurrent request within cooldown interval.')
+# Note: Cooldown logic is tested deterministically in tests/test_audit_remediation.py
+print('\nNote: Server cooldown enforcement is authoritatively validated by deterministic unit tests in tests/test_audit_remediation.py.')
 
 print('\n======================================================')
 print('ALL LIVE GEMMA 4 INTEGRATION TESTS PASSED SUCCESSFULLY')

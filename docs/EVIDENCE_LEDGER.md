@@ -161,22 +161,22 @@
   - Synchronized documentation, decision records (D01–D27), and version metadata.
 
 ### Milestone J: Final Astra Re-Audit Corrections & CI Stability — VERIFIED
-- **Fix 1 (Live Gemma Cooldown Decoupling & Unit Tests):**
-  - Refactored `scripts/verify_gemma_live.py` lines 97–123 to use `concurrent.futures.ThreadPoolExecutor` concurrent dispatch (`f1` initial request + `f2` 0.15s dispatch within lock window), eliminating false failures from live upstream API latency.
-  - Added 3 isolated mocked cooldown tests in `tests/test_audit_remediation.py`: `test_cooldown_request_inside_window_returns_deterministic_fallback`, `test_cooldown_request_after_window_proceeds`, and `test_cooldown_slow_provider_response_cooldown_starts_at_lock_entry`. Suite expanded to 94 tests.
+- **Fix 1 (Live Gemma Verification Decoupling & Unit Tests):**
+  - In `scripts/verify_gemma_live.py`, removed the live cooldown assertion that relied on `time.sleep(0.15)` to guarantee request admission order, preserving genuine live Gemma explanation and authentication tests.
+  - Relied on the 3 deterministic mocked cooldown unit tests in `tests/test_audit_remediation.py` as authoritative (`test_cooldown_request_inside_window_returns_deterministic_fallback`, `test_cooldown_request_after_window_proceeds`, `test_cooldown_slow_provider_response_cooldown_starts_at_lock_entry`). Suite expanded to 94 tests.
 - **Fix 2 (Browser Acceptance Startup Hardening & CI Diagnostics):**
   - Enhanced `scripts/test_browser_acceptance.js` with `launchBrowserWithRetry` (2 attempts), piped and sanitized stderr ring buffer, child exit detection, CDP `/json/version` polling readiness, `/json/new` target creation fallback, and dynamic CDP port conflict fallback.
   - Added artifact upload step in `.github/workflows/ci.yml` capturing `test-results/browser-startup-diagnostics.json` if browser startup fails.
 - **Fix 3 (Documentation & Historical Provenance Correction):**
   - Replaced typographical SHA `3c790d0bcece7a7b8e1f0e4b8ee34681577ffcba` with exact git commit SHA `3c790d088b4345b62c6017101c51a1002309b427` (CI run `40151348462`).
   - Accurately documented offline browser test counts as 13 passed, 4 skipped (17 registered/accounted for).
-  - Documented both historical runs at `fdb86b8` (`40151615140` PASS and `40151612925` browser startup failure).
+  - Documented both historical runs at `fdb86b8` (`40151615140` PASS and `40151612925` browser startup failure), and documented latest baseline `8ac073d` with successful CI runs `40153753168` and `40153755537`.
 - **Fix 4 (Judge Evidence Card Honest Provenance Classification):**
   - Added explicit 8-scenario provenance matrix in `web/app.js` and `scripts/test_browser_acceptance.js`. Unauthenticated trace imports from camera/video receive `unverified_origin: true` and `provenance_status: 'declared_not_authenticated'`.
   - Verified downloaded evidence card and trace files from disk.
 - **Fix 5 (Guided Retake Percentage Points Clarification & Canvas Overlay Robustness):**
   - Updated retake comparison delta string to `(+X percentage points)` or `(-X percentage points)` with disclaimer.
-  - In `plotOverlay`, prevented call-stack overflows with loop-based bound calculations and lifted pen across timing gaps (`> 0.25s`) on waveform overlay. Verified disparate point lengths (450 vs 455 points).
+  - In `plotOverlay`, prevented call-stack overflows with loop-based bound calculations and lifted pen across timing gaps (`> 0.25s`) on waveform overlay. In browser acceptance T06, asserted actual finite canvas coordinates, original/transformed endpoints, 450-vs-455 waveform points, timing-gap segmentation, and unequal-length spectrum coordinates (150 vs 175 points).
 - **Fix 6 (Deterministic Concurrency & Cancellation Tests):**
   - Replaced arbitrary sleep delays in `tests/test_audit_remediation.py` with `asyncio.Event` barriers across `test_r1_cancelled_task_releases_semaphore`, `test_r1_concurrency_simultaneous_requests_admitted`, and `test_r1_concurrency_max_active_provider_calls_strictly_bounded`.
 - **Fix 7 (Source & Repository Hygiene):**
