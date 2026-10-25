@@ -304,7 +304,7 @@ function getRetakeAdvice(checks) {
   else if (failedNames.has('color_jump_proxy') || failedNames.has('relative_signal_std') || failedNames.has('spectral_concentration') || failedNames.has('autocorrelation')) {
     category = 'stability';
     if (!failedNames.has('color_jump_proxy') && (failedNames.has('spectral_concentration') || failedNames.has('autocorrelation'))) {
-      primary = 'Frequency evidence is diffuse across multiple peaks or cycle-to-cycle periodicity is low (spectral concentration < 0.40 or autocorrelation < 0.15). A stable repeating pulse could not be isolated from background sensor noise. Ensure steady, indirect front lighting across both cheeks, rest your chin to eliminate micro-motion, and confirm bare cheek skin fills both guide boxes.';
+      primary = 'Frequency evidence is diffuse across multiple peaks or cycle-to-cycle periodicity is low (spectral concentration < 0.25 or autocorrelation < 0.12). A stable repeating pulse could not be isolated from background sensor noise. Ensure steady, indirect front lighting across both cheeks, rest your chin to eliminate micro-motion, and confirm bare cheek skin fills both guide boxes.';
     } else {
       primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
     }
@@ -445,7 +445,7 @@ function render(r) {
         diag.textContent =
           `Strongest periodic lag: ${lag} samples ≈ ${lagBpm} BPM ` +
           `(search window ${lo.toFixed(0)}–${hi.toFixed(0)} BPM). ` +
-          `Correlation strength ${check.value} — required ≥ 0.45. ` +
+          `Correlation strength ${check.value} — required ${check.rule}. ` +
           `This is experimental signal periodicity only, not an authenticated heart rate.`;
         row.append(diag);
       }
