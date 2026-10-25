@@ -845,6 +845,7 @@ def test_r1_concurrency_two_simultaneous_requests_both_admitted(monkeypatch):
         module.ai_lock = asyncio.Lock()
         active_count = 0
         max_active = 0
+        both_active = asyncio.Event()
 
         orig_post = httpx.AsyncClient.post
         async def fake_post(self, url, **kwargs):
@@ -852,7 +853,10 @@ def test_r1_concurrency_two_simultaneous_requests_both_admitted(monkeypatch):
             if 'generativelanguage' in str(url):
                 active_count += 1
                 max_active = max(max_active, active_count)
-                await asyncio.sleep(0.05)
+                if active_count == 2:
+                    both_active.set()
+                await asyncio.wait_for(both_active.wait(), timeout=5.0)
+                await asyncio.sleep(0.01)
                 active_count -= 1
                 return httpx.Response(200, request=httpx.Request('POST', str(url)),
                     json={'candidates': [{'content': {'parts': [{'text': 'Concurrent test ok.'}]}}]})
@@ -886,6 +890,7 @@ def test_r1_concurrency_max_active_provider_calls_strictly_bounded(monkeypatch):
         module.ai_lock = asyncio.Lock()
         active_count = 0
         max_observed_active = 0
+        two_active = asyncio.Event()
 
         orig_post = httpx.AsyncClient.post
         async def fake_post(self, url, **kwargs):
@@ -893,7 +898,10 @@ def test_r1_concurrency_max_active_provider_calls_strictly_bounded(monkeypatch):
             if 'generativelanguage' in str(url):
                 active_count += 1
                 max_observed_active = max(max_observed_active, active_count)
-                await asyncio.sleep(0.04)
+                if active_count == 2:
+                    two_active.set()
+                await asyncio.wait_for(two_active.wait(), timeout=5.0)
+                await asyncio.sleep(0.01)
                 active_count -= 1
                 return httpx.Response(200, request=httpx.Request('POST', str(url)),
                     json={'candidates': [{'content': {'parts': [{'text': 'Bounded active ok.'}]}}]})
@@ -1102,10 +1110,12 @@ def test_r1_cancelled_task_releases_semaphore(monkeypatch):
     async def run():
         module.ai_semaphore = asyncio.Semaphore(2)
         module.ai_lock = asyncio.Lock()
+        entered_gate = asyncio.Event()
         hold_gate = asyncio.Event()
         orig_post = httpx.AsyncClient.post
         async def gating_post(self, url, **kwargs):
             if 'generativelanguage' in str(url):
+                entered_gate.set()
                 await hold_gate.wait()
                 return httpx.Response(200, request=httpx.Request('POST', str(url)),
                     json={'candidates': [{'content': {'parts': [{'text': 'Gate released ok.'}]}}]})
@@ -1116,7 +1126,10 @@ def test_r1_cancelled_task_releases_semaphore(monkeypatch):
         transport = httpx.ASGITransport(app=module.app)
         async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
             task1 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
-            await asyncio.sleep(0.02)
+            # Wait deterministically until task1 has acquired semaphore and entered provider call
+            await asyncio.wait_for(entered_gate.wait(), timeout=5.0)
+            assert module.ai_semaphore._value == 1
+
             # Cancel task1 while it is holding semaphore
             task1.cancel()
             try:
@@ -1124,7 +1137,7 @@ def test_r1_cancelled_task_releases_semaphore(monkeypatch):
             except asyncio.CancelledError:
                 pass
 
-            # Semaphore must have both slots available
+            # Semaphore must have both slots available immediately after cancellation
             assert module.ai_semaphore._value == 2
 
             # Subsequent request acquires without blocking
@@ -1244,6 +1257,91 @@ def test_secrets_never_leaked_in_endpoints_or_cards(monkeypatch):
 
     r_sample = client.get('/api/sample/clean')
     assert secret not in r_sample.text
+
+
+def test_cooldown_request_inside_window_returns_deterministic_fallback(monkeypatch):
+    """MOCKED: Request arriving within AI_COOLDOWN_SECONDS interval returns deterministic fallback."""
+    import time
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 10.0)
+
+    # Set last call to 2 seconds ago (inside 10s cooldown window)
+    monkeypatch.setattr(module, 'last_ai_call', time.monotonic() - 2.0)
+
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    res = r.json()
+    assert res['provider'] == 'deterministic'
+    assert 'AI cooldown: wait ten seconds' in res['reason']
+
+
+def test_cooldown_request_after_window_proceeds(monkeypatch):
+    """MOCKED: Request arriving after AI_COOLDOWN_SECONDS interval proceeds to provider."""
+    import time
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 10.0)
+
+    # Set last call to 12 seconds ago (outside 10s window)
+    monkeypatch.setattr(module, 'last_ai_call', time.monotonic() - 12.0)
+
+    orig_post = httpx.AsyncClient.post
+    provider_called = False
+
+    async def mock_post(self, url, **kwargs):
+        nonlocal provider_called
+        if 'generativelanguage' in str(url):
+            provider_called = True
+            return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                json={'candidates': [{'content': {'parts': [{'text': 'Cooldown cleared ok.'}]}}]})
+        return await orig_post(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', mock_post)
+
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    res = r.json()
+    assert res['provider'] == 'Gemma 4'
+    assert provider_called is True
+
+
+def test_cooldown_slow_provider_response_cooldown_starts_at_lock_entry(monkeypatch):
+    """MOCKED: Verifies server records last_ai_call when ai_lock is acquired, not on completion."""
+    import time
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 10.0)
+    monkeypatch.setattr(module, 'last_ai_call', 0.0)
+
+    lock_timestamp = None
+    orig_post = httpx.AsyncClient.post
+
+    async def slow_mock_post(self, url, **kwargs):
+        nonlocal lock_timestamp
+        if 'generativelanguage' in str(url):
+            # Capture the recorded last_ai_call timestamp at provider execution time
+            lock_timestamp = module.last_ai_call
+            await asyncio.sleep(0.05)
+            return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                json={'candidates': [{'content': {'parts': [{'text': 'Slow provider ok.'}]}}]})
+        return await orig_post(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', slow_mock_post)
+
+    t_before = time.monotonic()
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    t_after = time.monotonic()
+
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'Gemma 4'
+    # Confirm last_ai_call was recorded between t_before and t_after (at lock acquisition)
+    assert lock_timestamp is not None
+    assert t_before <= lock_timestamp <= t_after
+
 
 
 

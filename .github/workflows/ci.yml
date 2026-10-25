@@ -145,6 +145,14 @@ jobs:
           print("OK: Negative timeout regression specifically verified on T11 while other tests passed.")
           '
 
+      - name: Upload Browser Acceptance Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-acceptance-diagnostics
+          path: test-results/
+          if-no-files-found: ignore
+
   docker-smoke:
     name: Docker Build & Container Smoke Test
     runs-on: ubuntu-latest

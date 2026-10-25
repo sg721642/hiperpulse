@@ -95,21 +95,31 @@ assert no_token_r.status_code == 401
 print('✓ Unauthorized request without token correctly rejected with HTTP 401.')
 
 # C.3 Cooldown gate returns deterministic fallback (<10s)
-# Reset last call by making a valid request, then immediately calling again
+# Dispatch first request and immediately dispatch a second request to test cooldown
+# independently of external provider response latency.
 print('Testing cooldown fallback...')
 time.sleep(15)  # clear previous cooldown
-r1 = httpx.post('http://127.0.0.1:8080/api/explain', json=sample_clean,
-                headers={'X-Demo-Token': DEMO_TOKEN}, timeout=95)
-print(f'Initial call status: {r1.status_code}, provider: {r1.json().get("provider")}')
+import concurrent.futures
 
-# Immediate second call must be caught by 10s cooldown
-r2 = httpx.post('http://127.0.0.1:8080/api/explain', json=sample_clean,
-                headers={'X-Demo-Token': DEMO_TOKEN}, timeout=15)
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    f1 = executor.submit(lambda: httpx.post(
+        'http://127.0.0.1:8080/api/explain', json=sample_clean,
+        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=95
+    ))
+    time.sleep(0.15)  # ensure initial request has entered server lock
+    f2 = executor.submit(lambda: httpx.post(
+        'http://127.0.0.1:8080/api/explain', json=sample_clean,
+        headers={'X-Demo-Token': DEMO_TOKEN}, timeout=15
+    ))
+    r2 = f2.result()
+    r1 = f1.result()
+
+print(f'Initial call status: {r1.status_code}, provider: {r1.json().get("provider")}')
 print(f'Second call status: {r2.status_code}, provider: {r2.json().get("provider")}, reason: {r2.json().get("reason")}')
 assert r2.status_code == 200
 assert r2.json().get('provider') == 'deterministic'
 assert 'AI cooldown: wait ten seconds' in r2.json().get('reason', '')
-print('✓ Cooldown fallback verified successfully on immediate second request.')
+print('✓ Cooldown fallback verified successfully on concurrent request within cooldown interval.')
 
 print('\n======================================================')
 print('ALL LIVE GEMMA 4 INTEGRATION TESTS PASSED SUCCESSFULLY')

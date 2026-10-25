@@ -15,6 +15,7 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,7 +43,6 @@ function resolveBrowserBin() {
 }
 
 const BROWSER_BIN = resolveBrowserBin();
-const USER_DATA_DIR = `/tmp/browser_test_${Date.now()}`;
 
 async function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -122,6 +122,218 @@ class CDPClient {
   }
 }
 
+async function checkPortAvailable(port) {
+  return new Promise((resolve) => {
+    const s = net.createServer();
+    s.once('error', () => resolve(false));
+    s.once('listening', () => s.close(() => resolve(true)));
+    s.listen(port, '127.0.0.1');
+  });
+}
+
+async function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.once('error', reject);
+    s.once('listening', () => {
+      const p = s.address().port;
+      s.close(() => resolve(p));
+    });
+    s.listen(0, '127.0.0.1');
+  });
+}
+
+function sanitizeDiagnostics(text) {
+  if (typeof text !== 'string') return String(text);
+  return text.replace(/[A-Za-z0-9_-]{35,}/g, '[REDACTED_SECRET]');
+}
+
+async function launchBrowserAttempt(attemptNumber, preferredPort) {
+  let cdpPort = preferredPort;
+  if (!process.env.CDP_PORT) {
+    const isFree = await checkPortAvailable(cdpPort);
+    if (!isFree) {
+      cdpPort = await getFreePort();
+      console.log(`[Attempt ${attemptNumber}] Preferred CDP port ${preferredPort} is busy. Switched to dynamic port ${cdpPort}.`);
+    }
+  }
+
+  const userDataDir = path.resolve('/tmp', `browser_test_${Date.now()}_${attemptNumber}`);
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  const stderrBuffer = [];
+  let childExitCode = null;
+  let childSignal = null;
+  let childExited = false;
+  let childSpawnError = null;
+
+  let browserProc = null;
+  try {
+    browserProc = spawn(BROWSER_BIN, [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      `--remote-debugging-port=${cdpPort}`,
+      `--user-data-dir=${userDataDir}`,
+      '--use-fake-ui-for-media-stream',
+      '--use-fake-device-for-media-stream',
+      '--no-first-run',
+      '--no-default-browser-check',
+      `http://127.0.0.1:${PORT}/`
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err) {
+    throw {
+      phase: 'spawn',
+      attemptNumber,
+      browserBin: BROWSER_BIN,
+      cdpPort,
+      userDataDir,
+      error: sanitizeDiagnostics(err.message),
+      stderrTail: []
+    };
+  }
+
+  browserProc.stderr.on('data', chunk => {
+    const lines = chunk.toString('utf-8').split('\n');
+    for (const line of lines) {
+      const sanitized = sanitizeDiagnostics(line.trim());
+      if (sanitized) {
+        stderrBuffer.push(sanitized);
+        if (stderrBuffer.length > 50) stderrBuffer.shift();
+      }
+    }
+  });
+
+  browserProc.on('error', err => {
+    childSpawnError = err;
+    childExited = true;
+  });
+
+  browserProc.on('exit', (code, signal) => {
+    childExited = true;
+    childExitCode = code;
+    childSignal = signal;
+  });
+
+  const startTime = Date.now();
+  let target = null;
+  let phase = 'readiness_check';
+
+  try {
+    for (let i = 0; i < 40; i++) {
+      if (childExited) {
+        phase = 'early_process_exit';
+        const reason = childSpawnError ? childSpawnError.message : `code=${childExitCode}, signal=${childSignal}`;
+        throw new Error(`Browser process exited prematurely (${reason})`);
+      }
+      await sleep(350);
+
+      // Phase 1: verify CDP HTTP server readiness
+      try {
+        const verRes = await fetch(`http://127.0.0.1:${cdpPort}/json/version`, { signal: AbortSignal.timeout(1000) });
+        if (verRes.ok) {
+          phase = 'target_discovery';
+          // Phase 2: inspect /json/list
+          const listRes = await fetch(`http://127.0.0.1:${cdpPort}/json/list`, { signal: AbortSignal.timeout(1000) });
+          if (listRes.ok) {
+            const targets = await listRes.json();
+            target = targets.find(t => t.url?.includes(`:${PORT}`) && t.webSocketDebuggerUrl) ||
+                     targets.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
+            if (target) break;
+
+            // Phase 3: If debugger is active but target not ready after 2.5s, create page target explicitly
+            if (Date.now() - startTime > 2500) {
+              phase = 'target_creation';
+              try {
+                const newRes = await fetch(`http://127.0.0.1:${cdpPort}/json/new?http://127.0.0.1:${PORT}/`, {
+                  method: 'PUT',
+                  signal: AbortSignal.timeout(2000)
+                });
+                if (newRes.ok) {
+                  const newTarget = await newRes.json();
+                  if (newTarget.webSocketDebuggerUrl) {
+                    target = newTarget;
+                    break;
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!target) {
+      phase = 'target_timeout';
+      throw new Error(`Failed to find or create browser page target via CDP after ${Date.now() - startTime}ms`);
+    }
+
+    phase = 'ws_connection';
+    const client = new CDPClient(target.webSocketDebuggerUrl);
+    await client.connect();
+
+    return {
+      proc: browserProc,
+      client,
+      cdpPort,
+      userDataDir,
+      target,
+      stderrBuffer
+    };
+  } catch (err) {
+    try { browserProc.kill('SIGKILL'); } catch {}
+    try { fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch {}
+    throw {
+      phase,
+      attemptNumber,
+      browserBin: BROWSER_BIN,
+      cdpPort,
+      userDataDir,
+      childExited,
+      childExitCode,
+      childSignal,
+      error: sanitizeDiagnostics(err.message),
+      stderrTail: stderrBuffer.slice(-20),
+      durationMs: Date.now() - startTime
+    };
+  }
+}
+
+async function launchBrowserWithRetry(preferredPort) {
+  const attempts = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`Starting headless browser (Attempt ${attempt}/2) on ${BROWSER_BIN}...`);
+      const res = await launchBrowserAttempt(attempt, preferredPort);
+      console.log(`✓ Browser connected on CDP port ${res.cdpPort} (profile: ${res.userDataDir})`);
+      return res;
+    } catch (diag) {
+      attempts.push(diag);
+      console.warn(`[Browser Startup Warning] Attempt ${attempt} failed in phase "${diag.phase}": ${diag.error}`);
+      if (attempt < 2) {
+        await sleep(1000);
+      }
+    }
+  }
+
+  const fatalDiag = {
+    timestamp: new Date().toISOString(),
+    browserBin: BROWSER_BIN,
+    preferredPort,
+    targetPort: PORT,
+    attempts
+  };
+  try {
+    const diagPath = path.resolve(ROOT, 'test-results', 'browser-startup-diagnostics.json');
+    fs.mkdirSync(path.dirname(diagPath), { recursive: true });
+    fs.writeFileSync(diagPath, JSON.stringify(fatalDiag, null, 2), 'utf-8');
+    console.error(`Detailed browser startup diagnostics saved: ${diagPath}`);
+  } catch {}
+
+  throw new Error(`Failed to launch browser and acquire CDP session after 2 attempts:\n${JSON.stringify(attempts, null, 2)}`);
+}
+
 // ---------------------------------------------------------------------------
 // Pre-registered Test Suite Definition (F03)
 // ---------------------------------------------------------------------------
@@ -158,23 +370,11 @@ async function main() {
   if (!healthRes.ok) throw new Error(`Server health check failed: ${healthRes.status}`);
   console.log('✓ Localhost server active and healthy');
 
-  // Launch browser headless with CDP and fake media streams
-  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
-  const browserProc = spawn(BROWSER_BIN, [
-    '--headless=new',
-    '--no-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    `--remote-debugging-port=${CDP_PORT}`,
-    `--user-data-dir=${USER_DATA_DIR}`,
-    '--use-fake-ui-for-media-stream',
-    '--use-fake-device-for-media-stream',
-    '--no-first-run',
-    '--no-default-browser-check',
-    `http://127.0.0.1:${PORT}/`
-  ], { stdio: 'ignore' });
-
+  let launchResult = null;
+  let browserProc = null;
   let client = null;
+  let USER_DATA_DIR = null;
+  let DOWNLOAD_DIR = null;
   const testResults = new Map();
 
   function recordResult(id, status, detail = '') {
@@ -191,25 +391,11 @@ async function main() {
   }
 
   try {
-    // Wait for CDP port to open and find target
-    let target = null;
-    for (let i = 0; i < 50; i++) {
-      await sleep(500);
-      try {
-        const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
-        const targets = await listRes.json();
-        target = targets.find(t => t.url?.includes(`:${PORT}`) && t.webSocketDebuggerUrl) ||
-                 targets.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
-        if (target) break;
-      } catch {}
-    }
-    if (!target) throw new Error('Failed to find browser page target via CDP');
-
-    client = new CDPClient(target.webSocketDebuggerUrl);
-    await client.connect();
-    console.log('✓ Connected via Chrome DevTools Protocol');
-
-    const DOWNLOAD_DIR = path.resolve(USER_DATA_DIR, 'downloads');
+    launchResult = await launchBrowserWithRetry(CDP_PORT);
+    browserProc = launchResult.proc;
+    client = launchResult.client;
+    USER_DATA_DIR = launchResult.userDataDir;
+    DOWNLOAD_DIR = path.resolve(USER_DATA_DIR, 'downloads');
     fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
     try { await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR }); } catch {}
     try { await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR, eventsEnabled: true }); } catch {}
@@ -336,7 +522,24 @@ async function main() {
       }
       // Verify Guided Retake Comparison: flat was previous (64%), clean is current (100%)
       const retakeCmp = await client.eval(`$('retakeComparison') ? $('retakeComparison').textContent : ''`);
-      const retakeCmpVerified = retakeCmp.includes('Comparison with previous run:') && retakeCmp.includes('Score: 64% → 100% (+36%)');
+      const retakeCmpVerified = retakeCmp.includes('Comparison with previous run:') &&
+                                retakeCmp.includes('Score: 64% → 100% (+36 percentage points)') &&
+                                retakeCmp.includes('Quality score reflects the percentage of heuristic signal checks passed');
+
+      // Verify canvas overlay functions with disparate array lengths (450 vs 455 points) and gap handling
+      const overlayCheck = await client.eval(`(() => {
+        try {
+          const xs1 = Array.from({ length: 450 }, (_, i) => i * (30 / 450));
+          const ys1 = xs1.map(x => Math.sin(2 * Math.PI * 1.2 * x));
+          const xs2 = Array.from({ length: 455 }, (_, i) => i * (30 / 455) + (i > 227 ? 0.35 : 0));
+          const ys2 = xs2.map(x => Math.cos(2 * Math.PI * 1.2 * x));
+          plotOverlay('wave', xs1, ys1, xs2, ys2, '#8ae8c4', '#f1cc8b');
+          const canvas = $('wave');
+          return { ok: true, width: canvas.width, height: canvas.height };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      })()`);
 
       await client.eval(`$('stress').click()`);
       for (let i = 0; i < 40; i++) {
@@ -346,10 +549,10 @@ async function main() {
       }
       const comparisonText = await client.eval(`$('comparison').textContent`);
       const baseBpmAfterStress = await client.eval(`$('bpm').textContent`);
-      if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72' && retakeCmpVerified) {
-        recordResult('T06', 'PASS', 'Guided retake delta & stress comparison verified');
+      if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72' && retakeCmpVerified && overlayCheck.ok) {
+        recordResult('T06', 'PASS', 'Guided retake delta (+36 percentage points), stress comparison & canvas overlay verified');
       } else {
-        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, comp=${comparisonText.slice(0, 50)}`);
+        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, overlayOk=${overlayCheck?.ok}, comp=${comparisonText.slice(0, 50)}`);
       }
     } catch (e) { recordResult('T06', 'FAIL', e.message); }
 
@@ -420,14 +623,65 @@ async function main() {
       }
       const reimportedReceipt = await client.eval(`receipt`);
       const reimportedLabel = await client.eval(`$('source').textContent`);
-      if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash &&
-          reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100 &&
-          reimportedReceipt.ingestion === 'json_import' &&
-          reimportedLabel === 'IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN') {
-        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, label="${reimportedLabel}"`);
-      } else {
-        recordResult('T07', 'FAIL', `receiptLoaded=${Boolean(reimportedReceipt)}, hashMatch=${reimportedReceipt?.signal_sha256 === originalSignalHash}, label="${reimportedLabel}"`);
+      if (!reimportedReceipt || reimportedReceipt.signal_sha256 !== originalSignalHash ||
+          reimportedReceipt.bpm !== 72 || reimportedReceipt.quality_score !== 100 ||
+          reimportedReceipt.ingestion !== 'json_import' ||
+          reimportedLabel !== 'IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN') {
+        throw new Error(`Reimported receipt validation failed: label="${reimportedLabel}"`);
       }
+
+      // 5. Test Judge Evidence Card downloads across all 8 provenance scenarios
+      async function testCardProvenance(source, ingestion, expectedStatus, expectedUnverified, expectedSynthetic) {
+        try { fs.unlinkSync(cardFilePath); } catch {}
+        await client.eval(`
+          receipt.source = ${JSON.stringify(source)};
+          receipt.ingestion = ${JSON.stringify(ingestion)};
+          $('evidenceCard').click();
+        `);
+        for (let i = 0; i < 25; i++) {
+          await sleep(60);
+          if (fs.existsSync(cardFilePath)) break;
+        }
+        if (!fs.existsSync(cardFilePath)) throw new Error(`Evidence card not downloaded for ${source}/${ingestion}`);
+        const parsed = JSON.parse(fs.readFileSync(cardFilePath, 'utf8'));
+        if (parsed.provenance_status !== expectedStatus) {
+          throw new Error(`Expected provenance_status ${expectedStatus} for ${source}/${ingestion}, got ${parsed.provenance_status}`);
+        }
+        if (parsed.unverified_origin !== expectedUnverified) {
+          throw new Error(`Expected unverified_origin ${expectedUnverified} for ${source}/${ingestion}, got ${parsed.unverified_origin}`);
+        }
+        if (parsed.is_synthetic !== expectedSynthetic) {
+          throw new Error(`Expected is_synthetic ${expectedSynthetic} for ${source}/${ingestion}, got ${parsed.is_synthetic}`);
+        }
+        if (!Array.isArray(parsed.disclaimers) || parsed.disclaimers.length !== 3) {
+          throw new Error(`Disclaimers missing from evidence card for ${source}/${ingestion}`);
+        }
+        // Verify no credentials or private traces in card
+        const cardStr = JSON.stringify(parsed);
+        if (cardStr.includes('AIza') || cardStr.includes('token') && parsed.token) {
+          throw new Error('Credential leakage detected in Judge Evidence Card');
+        }
+        return parsed;
+      }
+
+      // 1. Generic sample
+      await testCardProvenance('sample', 'sample', 'unknown_origin', true, false);
+      // 2. Known project synthetic fixture
+      await testCardProvenance('synthetic', 'synthetic_fixture', 'known_synthetic_fixture', false, true);
+      // 3. Synthetic JSON reimport
+      await testCardProvenance('synthetic', 'json_import', 'known_synthetic_fixture', false, true);
+      // 4. Camera-declared JSON import (must be unverified_origin: true, declared_not_authenticated)
+      await testCardProvenance('camera', 'json_import', 'declared_not_authenticated', true, false);
+      // 5. Video-declared JSON import
+      await testCardProvenance('video', 'json_import', 'declared_not_authenticated', true, false);
+      // 6. Unknown local video
+      await testCardProvenance('video', 'local_video', 'unknown_origin', true, false);
+      // 7. Controlled live camera simulation
+      await testCardProvenance('camera', 'live_capture', 'live_browser_capture', false, false);
+      // 8. Unknown or legacy source
+      await testCardProvenance('unknown_legacy', 'legacy_import', 'unknown_origin', true, false);
+
+      recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, 8 provenance card scenarios verified`);
     } catch (e) { recordResult('T07', 'FAIL', e.message); }
 
     // TEST 8: Camera Preview & Stop/Discard Lifecycle
@@ -722,11 +976,16 @@ async function main() {
     if (client) {
       try { await client.close(); } catch {}
     }
-    try { browserProc.kill(); } catch {}
-    try {
-      await sleep(300);
-      fs.rmSync(USER_DATA_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-    } catch {}
+    if (browserProc) {
+      try { browserProc.kill('SIGTERM'); } catch {}
+      try { browserProc.kill('SIGKILL'); } catch {}
+    }
+    if (USER_DATA_DIR) {
+      try {
+        await sleep(300);
+        fs.rmSync(USER_DATA_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      } catch {}
+    }
   }
 
   // Summary

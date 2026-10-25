@@ -11,7 +11,10 @@ const TRUSTED_VIDEO_FIXTURES = {
   'c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd': 'test_video_12s.webm',
   '6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9': 'test_video_gapped.webm',
   '4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84': 'test_video_30s.mp4',
-  '5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f': 'test_video_12s.mp4'
+  '5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f': 'test_video_12s.mp4',
+  'b7d393a59c962b5161ab9d96b5a0a5e7c02803cec24b49496d2987d01632cf29': 'clean.json',
+  '1d941441ef89dcabf5b6602a1ac614f5ff7292d8a8cff6e4d1a132a6cec613e3': 'artifact.json',
+  '78c33dfbe0e69506a025ef6d768af6d689b26a393ff0b9ddd32757514df7cc2b': 'flat.json'
 };
 let selectedVideoFile = null, selectedVideoSha256 = null, selectedVideoSource = 'video';
 
@@ -30,9 +33,18 @@ function initBuildMeta() {
     }
   }).catch(() => {});
   fetch('/trusted_fixtures.json').then(r => r.ok ? r.json() : null).then(data => {
-    if (data && data.video_fixtures) {
-      for (const [sha, info] of Object.entries(data.video_fixtures)) {
-        TRUSTED_VIDEO_FIXTURES[sha] = info.fixture_id;
+    if (data) {
+      if (data.video_fixtures) {
+        for (const [sha, info] of Object.entries(data.video_fixtures)) {
+          TRUSTED_VIDEO_FIXTURES[sha] = info.fixture_id;
+        }
+      }
+      if (data.trace_fixtures) {
+        for (const [sha, info] of Object.entries(data.trace_fixtures)) {
+          TRUSTED_VIDEO_FIXTURES[sha] = info.fixture_id;
+          if (info.file_sha256) TRUSTED_VIDEO_FIXTURES[info.file_sha256] = info.fixture_id;
+          if (info.signal_sha256) TRUSTED_VIDEO_FIXTURES[info.signal_sha256] = info.fixture_id;
+        }
       }
     }
   }).catch(() => {});
@@ -107,16 +119,21 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
   c.clearRect(0, 0, w, h);
   if ((!xs1 || !xs1.length) && (!xs2 || !xs2.length)) return;
 
-  const validXs = [...(xs1 || []), ...(xs2 || [])];
+  const validXs = [];
+  if (xs1) for (let i = 0; i < xs1.length; i++) if (Number.isFinite(xs1[i])) validXs.push(xs1[i]);
+  if (xs2) for (let i = 0; i < xs2.length; i++) if (Number.isFinite(xs2[i])) validXs.push(xs2[i]);
   if (!validXs.length) return;
-  const xMin = Math.min(...validXs);
-  const xMax = Math.max(...validXs);
+  let xMin = validXs[0], xMax = validXs[0];
+  for (let i = 1; i < validXs.length; i++) {
+    if (validXs[i] < xMin) xMin = validXs[i];
+    if (validXs[i] > xMax) xMax = validXs[i];
+  }
   const xSpan = (xMax - xMin) || 1;
 
-  const allYs = [...(ys1 || []), ...(ys2 || [])];
-  let low = allYs.length ? Math.min(...allYs) : -1;
-  let high = allYs.length ? Math.max(...allYs) : 1;
-  if (high - low < 1e-8) { low = -1; high = 1; }
+  let low = Infinity, high = -Infinity;
+  if (ys1) for (let i = 0; i < ys1.length; i++) if (Number.isFinite(ys1[i])) { if (ys1[i] < low) low = ys1[i]; if (ys1[i] > high) high = ys1[i]; }
+  if (ys2) for (let i = 0; i < ys2.length; i++) if (Number.isFinite(ys2[i])) { if (ys2[i] < low) low = ys2[i]; if (ys2[i] > high) high = ys2[i]; }
+  if (!Number.isFinite(low) || !Number.isFinite(high) || high - low < 1e-8) { low = -1; high = 1; }
   const ySpan = (high - low) || 1;
 
   const x = v => pad + (v - xMin) / xSpan * (w - 2 * pad);
@@ -134,6 +151,7 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
     const len1 = Math.min(xs1.length, ys1.length);
     let started = false;
     for (let i = 0; i < len1; i++) {
+      if (id === 'wave' && i > 0 && xs1[i] - xs1[i-1] > 0.25) started = false;
       const px = x(xs1[i]), py = y(ys1[i]);
       if (Number.isFinite(px) && Number.isFinite(py)) {
         if (!started) { c.moveTo(px, py); started = true; }
@@ -149,6 +167,7 @@ function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
     const len2 = Math.min(xs2.length, ys2.length);
     let started = false;
     for (let i = 0; i < len2; i++) {
+      if (id === 'wave' && i > 0 && xs2[i] - xs2[i-1] > 0.25) started = false;
       const px = x(xs2[i]), py = y(ys2[i]);
       if (Number.isFinite(px) && Number.isFinite(py)) {
         if (!started) { c.moveTo(px, py); started = true; }
@@ -261,14 +280,14 @@ function render(r) {
   if ($('retakeComparison')) {
     if (previousSession && previousSession.signal_sha256 !== r.signal_sha256) {
       const deltaScore = r.quality_score - previousSession.quality_score;
-      const scoreDiffStr = deltaScore > 0 ? `+${deltaScore}%` : (deltaScore < 0 ? `${deltaScore}%` : 'no change');
+      const scoreDiffStr = deltaScore > 0 ? `+${deltaScore} percentage points` : (deltaScore < 0 ? `${deltaScore} percentage points` : 'no change');
       const prevBpm = previousSession.bpm !== null ? `${previousSession.bpm} BPM` : 'withheld';
       const currBpm = r.bpm !== null ? `${r.bpm} BPM` : 'withheld';
       const prevPassed = previousSession.checks.filter(c => c.pass).map(c => c.name);
       const currPassed = r.checks.filter(c => c.pass).map(c => c.name);
       const improved = currPassed.filter(n => !prevPassed.includes(n));
       const regressed = prevPassed.filter(n => !currPassed.includes(n));
-      let cmp = `Comparison with previous run:\n• Score: ${previousSession.quality_score}% → ${r.quality_score}% (${scoreDiffStr})\n• Estimate: ${prevBpm} → ${currBpm}\n• Gates passed: ${prevPassed.length}/14 → ${currPassed.length}/14`;
+      let cmp = `Comparison with previous run:\n• Score: ${previousSession.quality_score}% → ${r.quality_score}% (${scoreDiffStr})\n• Estimate: ${prevBpm} → ${currBpm}\n• Gates passed: ${prevPassed.length}/14 → ${currPassed.length}/14\n(Note: Quality score reflects the percentage of heuristic signal checks passed, not clinical accuracy or heart-rate precision.)`;
       if (improved.length) cmp += `\n• Improved checks: ${improved.map(n => n.replaceAll('_', ' ')).join(', ')}`;
       if (regressed.length) cmp += `\n• Regressed checks: ${regressed.map(n => n.replaceAll('_', ' ')).join(', ')}`;
       $('retakeComparison').textContent = cmp;
@@ -390,6 +409,38 @@ if ($('evidenceCard')) {
   $('evidenceCard').onclick = () => {
     if (!receipt) return;
     const advice = getRetakeAdvice(receipt.checks);
+    const declaredSource = receipt.source || 'unknown';
+    const ingestionMethod = receipt.ingestion || currentTrace?.ingestion || 'direct';
+
+    const isSyntheticFixture = Boolean(
+      receipt.source === 'synthetic' && (
+        (receipt.input_sha256 && TRUSTED_VIDEO_FIXTURES[receipt.input_sha256]) ||
+        (receipt.signal_sha256 && TRUSTED_VIDEO_FIXTURES[receipt.signal_sha256]) ||
+        ingestionMethod === 'synthetic_fixture' ||
+        ingestionMethod === 'sample'
+      )
+    );
+
+    let provenanceStatus = 'unknown_origin';
+    let unverifiedOrigin = true;
+
+    if (isSyntheticFixture) {
+      provenanceStatus = 'known_synthetic_fixture';
+      unverifiedOrigin = false;
+    } else if (declaredSource === 'camera' && ingestionMethod === 'live_capture') {
+      provenanceStatus = 'live_browser_capture';
+      unverifiedOrigin = false;
+    } else if (ingestionMethod === 'json_import') {
+      provenanceStatus = 'declared_not_authenticated';
+      unverifiedOrigin = true;
+    } else if (declaredSource === 'video' || declaredSource === 'sample') {
+      provenanceStatus = 'unknown_origin';
+      unverifiedOrigin = true;
+    } else {
+      provenanceStatus = 'unknown_origin';
+      unverifiedOrigin = true;
+    }
+
     const card = {
       application: 'HiperPulse',
       version: buildMeta.version || '1.1',
@@ -397,10 +448,11 @@ if ($('evidenceCard')) {
       git_sha: buildMeta.git_sha || 'unknown',
       provenance_note: 'Canonical signal_sha256 identifies the mathematical signal data rounded to 5 decimal places. git_sha identifies the software build revision. Neither constitutes a cryptographic signature of real human or camera origin.',
       timestamp_utc: new Date().toISOString(),
-      declared_source: receipt.source,
-      ingestion_method: receipt.ingestion || currentTrace?.ingestion || 'direct',
+      declared_source: declaredSource,
+      ingestion_method: ingestionMethod,
       is_synthetic: receipt.source === 'synthetic',
-      unverified_origin: receipt.source === 'video' || receipt.source === 'sample',
+      unverified_origin: unverifiedOrigin,
+      provenance_status: provenanceStatus,
       signal_sha256: receipt.signal_sha256 || null,
       input_sha256: receipt.input_sha256 || null,
       sample_count: currentTrace?.timestamps?.length || receipt.waveform?.seconds?.length || 0,
