@@ -9,6 +9,15 @@ LIMITATION = ('Experimental pulse-like periodicity only. Not clinically validate
               'Lighting or motion can imitate a pulse even when checks pass. '
               'No diagnosis, blood pressure, or oxygen saturation.')
 
+# Search range for spectral and autocorrelation estimators.
+# The estimator searches 0.7–3.0 Hz (≈ 42–180 BPM).
+# The acceptance gate applies the tighter 45–177 BPM window to avoid
+# acting on near-boundary candidates where estimator error is greatest.
+_SPECTRAL_LOW_HZ = 0.7
+_SPECTRAL_HIGH_HZ = 3.0
+_ACCEPT_LOW_BPM = 45
+_ACCEPT_HIGH_BPM = 177
+
 
 def sample(kind='clean'):
     """Deterministic synthetic RGB traces, never patient measurements."""
@@ -30,7 +39,7 @@ def sample(kind='clean'):
 def _peak(x, fs):
     f, power = sp.welch(x, fs=fs, nperseg=min(len(x), round(fs*10)),
                        nfft=max(2048, len(x)), detrend='linear')
-    mask = (f >= .7) & (f <= 3)
+    mask = (f >= _SPECTRAL_LOW_HZ) & (f <= _SPECTRAL_HIGH_HZ)
     f, power = f[mask], power[mask]
     index = int(np.argmax(power))
     frequency = float(f[index])
@@ -61,7 +70,7 @@ def analyze(data):
         raise ValueError('Use 10-60 seconds with a median sample rate of 10-120 Hz.')
     t = t-t[0]
     grid = np.arange(0, duration, 1/fs)
-    sos = sp.butter(3, [.7, 3], btype='bandpass', fs=fs, output='sos')
+    sos = sp.butter(3, [_SPECTRAL_LOW_HZ, _SPECTRAL_HIGH_HZ], btype='bandpass', fs=fs, output='sos')
     waves, peaks, concentrations = [], [], []
     for rgb in (left, right):
         green = np.interp(grid, t, rgb[:, 1])
@@ -77,9 +86,12 @@ def analyze(data):
     split_delta = abs(_peak(wave[:half], fs)[0]-_peak(wave[half:], fs)[0])
     ac = sp.correlate(wave, wave, mode='full', method='fft')[len(wave)-1:]
     ac = ac / max(float(ac[0]), 1e-20)
+    # Autocorrelation lag search: lo corresponds to 3 Hz (upper spectral bound),
+    # hi corresponds to 0.7 Hz (lower spectral bound).
     lo, hi = int(np.ceil(fs/3)), int(np.floor(fs/.7))
     lag = lo + int(np.argmax(ac[lo:hi+1]))
     ac_bpm = 60*fs/lag
+    ac_value = float(ac[lag])
     amplitude = float(min(np.std(waves[0]), np.std(waves[1])))
     jitter = float(np.std(dt) / np.mean(dt))
     jump = float(max(np.quantile(np.abs(np.diff(a[:,1])), .95) /
@@ -90,11 +102,16 @@ def analyze(data):
     max_light = max(patch1_mean, patch2_mean)
     exposure_passed = bool(20.0 <= min_light and max_light <= 235.0)
     reported_light = max_light if max_light > 235.0 else min_light
+
+    # Determine which cheek produced the weaker spectral concentration for diagnostics.
+    weaker_cheek = 'left' if concentrations[0] <= concentrations[1] else 'right'
+
     def check(name, value, passed, rule, action, **extra):
         c = {'name':name, 'value':round(float(value),4), 'pass':bool(passed),
              'rule':rule, 'action':action}
         c.update(extra)
         return c
+
     checks = [
         check('duration_seconds', duration, duration >= 20, '>= 20 s', 'Record for 30 seconds.'),
         check('sample_rate_hz', fs, fs >= 15, '>= 15 Hz', 'Use a faster device; close other apps.'),
@@ -106,12 +123,38 @@ def analyze(data):
         check('clipped_pixel_fraction', clipping.mean(), clipping.mean() <= .05, '<= 0.05', 'Reduce glare or deep shadows.'),
         check('color_jump_proxy', jump, jump <= .025, '<= 0.025', 'Hold still and keep lighting steady.'),
         check('relative_signal_std', amplitude, amplitude >= .0002, '>= 0.0002', 'Re-align both patches onto bare cheeks.'),
-        check('spectral_concentration', min(concentrations), min(concentrations) >= .50, '>= 0.50', 'Reduce motion and lighting changes.'),
+        # spectral_concentration: gate uses min() so BOTH cheeks must meet the threshold.
+        # Additive diagnostic fields expose per-cheek values and which cheek was weaker.
+        # Gate thresholds and acceptance logic are unchanged.
+        check('spectral_concentration', min(concentrations), min(concentrations) >= .50,
+              '>= 0.50',
+              'Periodicity evidence is diffuse. Ensure steady indirect front lighting, '
+              'rest your chin, and confirm bare cheek skin fills both guide boxes.',
+              left_concentration=round(concentrations[0], 4),
+              right_concentration=round(concentrations[1], 4),
+              left_peak_bpm=round(peaks[0], 2),
+              right_peak_bpm=round(peaks[1], 2),
+              weaker_cheek=weaker_cheek),
         check('patch_difference_bpm', abs(peaks[0]-peaks[1]), abs(peaks[0]-peaks[1]) <= 8, '<= 8 BPM', 'Keep both patches on cheeks.'),
         check('half_difference_bpm', split_delta, split_delta <= 10, '<= 10 BPM', 'Record a stable, stationary interval.'),
         check('estimator_difference_bpm', abs(candidate-ac_bpm), abs(candidate-ac_bpm) <= 10, '<= 10 BPM', 'Retry; repeating patterns are ambiguous.'),
-        check('autocorrelation', ac[lag], ac[lag] >= .45, '>= 0.45', 'Reduce noise and repeat the capture.'),
-        check('search_boundary_bpm', candidate, 45 <= candidate <= 177, '45..177 BPM', 'Estimate is near the supported search boundary; do not interpret it.'),
+        # autocorrelation: additive diagnostic fields expose the selected lag and its
+        # equivalent periodicity. These are experimental signal properties only.
+        # Gate threshold and acceptance logic are unchanged.
+        check('autocorrelation', ac_value, ac_value >= .45, '>= 0.45',
+              'Cycle-to-cycle periodicity is weak. Reduce sensor noise: use steady '
+              'indirect lighting, rest your chin to minimise micro-motion, and retry.',
+              ac_lag_samples=lag,
+              ac_lag_bpm=round(ac_bpm, 2),
+              ac_search_bpm_range=[round(60*fs/hi, 2), round(60*fs/lo, 2)]),
+        # search_boundary_bpm: the ACCEPTANCE window (45..177 BPM) is intentionally
+        # narrower than the estimator's search range (~42..180 BPM for fs≈30 Hz).
+        # The wider search locates the dominant frequency; the tighter acceptance
+        # window discards near-boundary candidates where estimator error is greatest.
+        check('search_boundary_bpm', candidate, _ACCEPT_LOW_BPM <= candidate <= _ACCEPT_HIGH_BPM,
+              f'{_ACCEPT_LOW_BPM}..{_ACCEPT_HIGH_BPM} BPM (acceptance window)',
+              'Candidate frequency is outside the accepted physiological window. '
+              'Verify lighting and remain still while retaking.'),
     ]
     accepted = all(c['pass'] for c in checks)
     score = round(100*sum(c['pass'] for c in checks)/len(checks))

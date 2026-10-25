@@ -80,9 +80,11 @@ function checkReadiness() {
     const rightG = val.right[1];
     const meanG = (leftG + rightG) / 2;
     const diffG = Math.abs(leftG - rightG);
-    let motion = 0;
+    // brightnessChange is a 200ms mean-green delta — it reflects lighting instability
+    // (auto-exposure, flicker, or position changes) but is not a direct motion sensor.
+    let brightnessChange = 0;
     if (lastGreenSample !== null) {
-      motion = Math.abs(meanG - lastGreenSample);
+      brightnessChange = Math.abs(meanG - lastGreenSample);
     }
     lastGreenSample = meanG;
 
@@ -95,9 +97,10 @@ function checkReadiness() {
     } else if (diffG > 35) {
       hud.className = 'readiness-hud warning';
       text.textContent = `UNEVEN SHADOWS (Δ${Math.round(diffG)}) · FACE LIGHT EVENLY`;
-    } else if (motion > 2.0) {
+    } else if (brightnessChange > 2.0) {
       hud.className = 'readiness-hud warning';
-      text.textContent = `MOTION DETECTED · HOLD HEAD STEADY`;
+      // Brightness instability: may be auto-exposure, lighting flicker, or movement.
+      text.textContent = `BRIGHTNESS UNSTABLE · HOLD STILL · STEADY LIGHT`;
     } else {
       hud.className = 'readiness-hud optimal';
       text.textContent = `READY · LIGHT ${Math.round(meanG)}/255 · POSITION STEADY`;
@@ -353,15 +356,80 @@ function render(r) {
     const title = document.createElement('strong'); title.className = check.pass ? 'pass' : 'fail';
     title.textContent = `${check.pass ? 'PASS' : 'FAIL'} · ${check.name.replaceAll('_', ' ')}: ${check.value} (${check.rule})`;
     header.append(title);
+
+    // Proportional gauge: reflect how close the value is to the threshold.
+    // For lower-bounded checks (rule starts with >=): fill = value / threshold.
+    // For upper-bounded checks (rule starts with <=): fill = threshold / value (inverted — full bar = at threshold, shrinks as violation grows).
+    // search_boundary_bpm uses a range, not a single bound — show 100% or 0%.
     const gauge = document.createElement('div'); gauge.className = 'check-gauge';
     const fill = document.createElement('div'); fill.className = `gauge-fill ${check.pass ? 'pass' : 'fail'}`;
-    fill.style.width = check.pass ? '100%' : '35%';
+    let gaugePct = 100;
+    if (!check.pass) {
+      const rule = check.rule || '';
+      if (check.name === 'search_boundary_bpm') {
+        gaugePct = 0; // range check — binary display
+      } else if (rule.startsWith('>=')) {
+        const threshold = parseFloat(rule.replace('>=', '').trim());
+        gaugePct = Number.isFinite(threshold) && threshold > 0
+          ? Math.min(99, Math.round(check.value / threshold * 100))
+          : 35;
+      } else if (rule.startsWith('<=')) {
+        const threshold = parseFloat(rule.replace('<=', '').trim().split(' ')[0]);
+        // Bar fills from threshold outward; when value equals threshold, fill is 100%.
+        // When value exceeds threshold, bar compresses.
+        gaugePct = Number.isFinite(threshold) && check.value > 0
+          ? Math.min(99, Math.round(threshold / check.value * 100))
+          : 35;
+      } else {
+        gaugePct = 35;
+      }
+    }
+    fill.style.width = `${gaugePct}%`;
     gauge.append(fill);
-    row.append(header, gauge);
+
+    // Numeric status label beneath the gauge for transparency
+    const gaugeLabel = document.createElement('div'); gaugeLabel.className = 'gauge-label';
+    if (check.pass) {
+      gaugeLabel.textContent = `${check.value} — required ${check.rule}`;
+    } else {
+      gaugeLabel.textContent = `${check.value} — required ${check.rule} — FAIL`;
+    }
+    row.append(header, gauge, gaugeLabel);
+
     if (!check.pass) {
       const p = document.createElement('div'); p.className = 'check-action';
       p.textContent = check.action;
       row.append(p);
+
+      // Per-cheek diagnostic for spectral_concentration
+      if (check.name === 'spectral_concentration' &&
+          check.left_concentration !== undefined && check.right_concentration !== undefined) {
+        const diag = document.createElement('div'); diag.className = 'check-diagnostic';
+        const lc = check.left_concentration.toFixed(4);
+        const rc = check.right_concentration.toFixed(4);
+        const lb = (check.left_peak_bpm || 0).toFixed(1);
+        const rb = (check.right_peak_bpm || 0).toFixed(1);
+        const weaker = check.weaker_cheek === 'left' ? 'LEFT CHEEK' : 'RIGHT CHEEK';
+        diag.textContent =
+          `Per-cheek: Left ${lc} (${lb} BPM) · Right ${rc} (${rb} BPM). ` +
+          `Weaker signal: ${weaker} — re-align that guide box onto bare cheek skin.`;
+        row.append(diag);
+      }
+
+      // Autocorrelation lag diagnostics
+      if (check.name === 'autocorrelation' &&
+          check.ac_lag_samples !== undefined) {
+        const diag = document.createElement('div'); diag.className = 'check-diagnostic';
+        const lag = check.ac_lag_samples;
+        const lagBpm = (check.ac_lag_bpm || 0).toFixed(1);
+        const [lo, hi] = check.ac_search_bpm_range || [42, 180];
+        diag.textContent =
+          `Strongest periodic lag: ${lag} samples ≈ ${lagBpm} BPM ` +
+          `(search window ${lo.toFixed(0)}–${hi.toFixed(0)} BPM). ` +
+          `Correlation strength ${check.value} — required ≥ 0.45. ` +
+          `This is experimental signal periodicity only, not an authenticated heart rate.`;
+        row.append(diag);
+      }
     }
     $('checks').append(row);
   }

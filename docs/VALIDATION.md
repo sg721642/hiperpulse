@@ -97,7 +97,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
     3. *Main-Thread Contention:* 60fps canvas particles during 30s capture introduced frame latency jitter.
     4. *Lack of Pre-Capture Alignment Feedback:* Users had no real-time indication of lighting or head stability prior to capture.
 - **Implemented Engineering Solutions:**
-  - High-SNR sampling in `web/app.js`: Upgraded scratch canvas to $320 \times 240$, extracting $1,102$ pixels per patch ($4.14\times$ increase), reducing sensor noise by $2\times$ and improving SNR by $6\text{--}12\text{ dB}$.
+  - Spatial averaging in `web/app.js`: Upgraded scratch canvas to $320 \times 240$, extracting $1,102$ pixels per patch ($4.14\times$ increase). Theoretically yields up to $6.2\text{ dB}$ noise variance reduction under an ideal independent shot-noise model, though physical camera pixels exhibit spatial correlation from Bayer demosaicing and video compression, so physical sensor improvement remains unmeasured.
   - Dynamic zero-crop aspect ratio: `updateStageAspectRatio()` automatically aligns `.capture-stage` aspect ratio to webcam stream (`videoWidth / videoHeight`).
   - Low-resource recording mode: `body.is-capturing` suspends hero canvas animation loop and heavy CSS glows during active capture, ensuring steady 30 fps frame delivery.
   - Real-time pre-capture readiness check HUD (`#readinessHud`): Monitors green range $[20, 235]$, bilateral cheek symmetry ($\Delta \le 35$), and head stillness.
@@ -134,6 +134,23 @@ Prepared 25 October 2026. This file separates observed software checks from task
   - 17 / 17 Browser Acceptance tests passing via Brave CDP runner.
   - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
   - GitHub Actions CI: 100% green across all 3 matrix jobs on both branches (run `40162282765` on `main`, run `40162285771` on `remediation/audit-hardening`).
+
+## Milestone N: Priority Signal Quality & Real-Camera Reliability Audit
+
+- **Date:** 25 October 2026
+- **Architecture & Implementation:**
+  - Preserved all 14 heuristic quality gate thresholds (`spectral_concentration >= 0.50`, `autocorrelation >= 0.45`, `patch_difference_bpm <= 8.0`, etc.) without artificial relaxation.
+  - Corrected readiness HUD wording: Replaced misleading `MOTION DETECTED` label with `BRIGHTNESS UNSTABLE · HOLD STILL · STEADY LIGHT`, accurately describing 200ms mean-green photometric instability rather than kinematic head tracking.
+  - Additive spectral diagnostics in `app/signal.py`: Exposes `left_concentration`, `right_concentration`, `left_peak_bpm`, `right_peak_bpm`, and `weaker_cheek` in `spectral_concentration` check for targeted cheek re-alignment advice without altering gate outcome.
+  - Additive autocorrelation diagnostics: Exposes `ac_lag_samples`, `ac_lag_bpm`, and `ac_search_bpm_range` in `autocorrelation` check, disclaiming candidate BPM as an experimental signal property.
+  - Honest value/threshold visualization: Replaced misleading hardcoded 35% failure gauge with proportional value-vs-threshold indicators showing actual measurements, required bounds, and explicit FAIL markers.
+  - Clarified search-band (0.7-3.0 Hz / 42-180 BPM) vs acceptance-window (45-177 BPM) design rationale.
+  - Reconciled scientific documentation: Formally qualified prior SNR estimates as theoretical mathematical models awaiting physical reference sensor calibration.
+- **Automated Verification:**
+  - 101 / 101 Python tests passing in 9.25s (`tests/test_signal_audit_remediation.py`).
+  - 0 JavaScript syntax errors (`node --check web/app.js`, `node --check scripts/test_browser_acceptance.js`).
+  - 17 / 17 Browser Acceptance tests passing in headless Brave via CDP (including live Gemma 4).
+  - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
