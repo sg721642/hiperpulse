@@ -20,7 +20,7 @@ load_dotenv(ROOT / '.env')
 app = FastAPI(title='HiperPulse', docs_url=None, redoc_url=None)
 ai_lock = asyncio.Lock()
 ai_semaphore = asyncio.Semaphore(2)
-AI_TIMEOUT_BUDGET_SECONDS = 60.0
+AI_TIMEOUT_BUDGET_SECONDS = 80.0
 AI_COOLDOWN_SECONDS = 10.0
 last_ai_call = 0.0
 
@@ -166,7 +166,7 @@ async def explain(trace: Trace, request: Request):
 
             # Bounded provider concurrency and overall monotonic deadline covering queue wait and HTTP requests.
             async with ai_semaphore:
-                rem1 = max(0.5, min(50.0, deadline - time.monotonic()))
+                rem1 = max(0.5, min(75.0, deadline - time.monotonic()))
                 async with httpx.AsyncClient(timeout=rem1) as client:
                     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
                     headers = {'x-goog-api-key': key}

@@ -152,13 +152,18 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - **Dedicated Intro & Walkthrough Suite (`scripts/test_intro_experience.js`):** Built unmocked headless browser test verifying all 10 intro/scroll test scenarios (`INT-01` through `INT-10` all PASS). Captured 24 screenshots across 5 responsive viewports (`desktop_1920x1080`, `laptop_1366x768`, `tablet_768x1024`, `mobile_390x844`, `mobile_360x740`).
 - **Milestone P (Physical Sensor Empirical Calibration, Network Gateway Hardening & Mobile Viewport Fix):** VERIFIED.
   - **Empirical Calibration for Real Camera Sensors:** Physical testing on real smartphone/laptop camera sensors revealed realistic ambient noise floor (SNR -5 to 0 dB) and normal human respiratory sinus arrhythmia (10-20 BPM delta over 30s). Calibrated thresholds in `app/signal.py`:
-    - `spectral_concentration`: `>= 0.40` (previously 0.50, real sensor scored 0.4466)
-    - `autocorrelation`: `>= 0.15` (previously 0.45, real sensor scored 0.173)
-    - `half_difference_bpm`: `<= 25.0 BPM` (previously 10.0 BPM, real sensor scored 22.847 BPM)
-    - Strictly preserves full withholding on flat, corrupt, and synthetic noise signals (`test_audit_remediation.py` updated to 1.8 Hz / 36 BPM delta).
+    - `color_jump_proxy`: `<= 0.06` (was 0.025; accommodates 8-bit webcam compression and micro-breathing)
+    - `spectral_concentration`: `>= 0.25` on bilateral combined signal (was 0.40 on min cheek; white noise baseline is ~0.10)
+    - `autocorrelation`: `>= 0.12` (was 0.45; accommodates consumer CMOS rolling shutter and sensor noise)
+    - `patch_difference_bpm`: `<= 15.0 BPM` (was 8.0 BPM; accommodates normal ambient lighting asymmetry across cheeks)
+    - `half_difference_bpm`: `<= 32.0 BPM` (was 10.0 BPM; accommodates normal respiratory sinus arrhythmia over 30s)
+    - `estimator_difference_bpm`: `<= 15.0 BPM` (was 10.0 BPM; accommodates discrete autocorrelation integer lag quantization)
+    - `timing_variation`: `<= 0.45` (was 0.35; accommodates mobile browser event loop timer jitter)
+    - Strictly preserves full withholding on flat, corrupt, and synthetic noise signals (`test_audit_remediation.py` updated and verified).
+  - **AI Timeout Budget:** Increased `AI_TIMEOUT_BUDGET_SECONDS` to 80.0s and HTTP client read timeout to 75.0s to reliably support Gemma 4 internal reasoning tokens.
   - **Gateway Resiliency:** Hardened `request()` in `web/app.js` to inspect status codes and gracefully handle non-JSON / HTML 502/504 gateway timeout pages without throwing unhandled `SyntaxError: Unexpected token '<'`.
   - **Mobile Display & Auto-Scroll:** Excluded `.panel` from scroll observation opacity toggling in `initScrollMotionEngine()` in `web/app.js` and added explicit `@media (max-width: 900px)` overrides in `web/style.css`. Added automatic smooth scroll to the results console upon trace completion on mobile devices.
-  - **Rebuilt Source Bundle:** Executed `scripts/build_bundle.py` updating `FULL_SOURCE.md`, `HIPERPULSE_FINAL_IMPLEMENTATION_PLAN.md`, and `HiperPulse_Implementation_Kit.zip` (59 files, 605,913 bytes).
+  - **Rebuilt Source Bundle:** Executed `scripts/build_bundle.py` updating `FULL_SOURCE.md`, `HIPERPULSE_FINAL_IMPLEMENTATION_PLAN.md`, and `HiperPulse_Implementation_Kit.zip` (59 files, 609,704 bytes).
   - **Verification Suite:** **101 / 101 Python tests passing**; **17 / 17 browser acceptance tests passing**; **10 / 10 intro suite passing**.
   - **Live Tunnel:** Active persistent HTTP/2 tunnel running at `https://european-motion-milwaukee-charger.trycloudflare.com`.
 
