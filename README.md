@@ -4,11 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![Python: 3.12](https://img.shields.io/badge/Python-3.12-3ee89f.svg)](requirements-lock.txt)
 [![Model: Gemma 4](https://img.shields.io/badge/AI-Gemma_4_(26B--A4B)--IT-blue.svg)](https://ai.google.dev/)
-[![Deployment: DigitalOcean Ready](https://img.shields.io/badge/Deploy-DigitalOcean_Ready-0080FF.svg)](deploy/digitalocean/app.yaml)
+[![Deployment: Render Cloud Live](https://img.shields.io/badge/Deploy-Render_Cloud_Live-46E3B7.svg)](https://hiperpulse.onrender.com)
+[![Deployment: DigitalOcean Spec](https://img.shields.io/badge/Deploy-DigitalOcean_Spec-0080FF.svg)](deploy/digitalocean/app.yaml)
 
 **Evidence before estimates.** An experimental, evidence-first, browser-based pulse signal analysis prototype developed for **Hacktoberfest Hack Day KodeKurrent S2 Jais × Open Science Labs**.
 
-> **🌐 LIVE INTERACTIVE DEMO:** [european-motion-milwaukee-charger.trycloudflare.com](https://european-motion-milwaukee-charger.trycloudflare.com)  
+> **🌐 LIVE 24/7 PRODUCTION CLOUD APP:** [https://hiperpulse.onrender.com](https://hiperpulse.onrender.com)  
 > **🔑 DEMO ACCESS KEY:** `hiperpulse`
 
 > **IMPORTANT:** Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.
@@ -17,9 +18,10 @@
 
 ### 🏆 Hackathon Challenge Tracks
 
-1. **Best Open-Source AI Project (Build with DigitalOcean):** 
+1. **Best Open-Source AI Project (Cloud Deployment):** 
    - 100% transparent, open-source under permissive MIT license.
-   - Micro-footprint container architecture ready for DigitalOcean App Platform (`deploy/digitalocean/app.yaml`).
+   - Deployed 24/7 on Render Cloud (`render.yaml` Blueprint) with zero downtime and automated GitHub CI/CD.
+   - Micro-footprint container architecture also specified for DigitalOcean App Platform (`deploy/digitalocean/app.yaml`).
    - 101 automated Python unit tests, 17 browser acceptance tests, and continuous integration workflow.
 2. **Best Use of Gemma 4:**
    - Powered by Google DeepMind's open-weight `gemma-4-26b-a4b-it` multimodal reasoning model.
@@ -35,7 +37,7 @@ Camera recording / local video / synthetic sample / JSON trace → timestamped t
 ## Key Technical Innovations
 
 - **100% Client-Side Privacy:** Zero raw camera video or facial imagery leaves the browser. Only micro-averaged RGB color channels ($320 \times 240$ bilateral spatial binning) are processed.
-- **14-Gate Signal Integrity Console:** Evaluates duration, sample rate, timing variation, skin luminance exposure ($[20, 235]$), pixel clipping, spectral peak concentration ($\ge 0.40$), bilateral cheek consensus ($\le 8.0\text{ BPM}$), and cross-estimator agreement ($\le 10.0\text{ BPM}$).
+- **14-Gate Signal Integrity Console:** Evaluates duration ($\ge 20\text{ s}$), sample rate ($\ge 15\text{ Hz}$), timing variation ($\le 0.45$), skin luminance exposure ($[20, 235]$), pixel clipping, spectral peak concentration ($\ge 0.25$), autocorrelation periodicity ($\ge 0.12$), bilateral cheek consensus ($\le 15.0\text{ BPM}$), and cross-estimator agreement ($\le 15.0\text{ BPM}$).
 - **Honest Null Withholding (`BPM: null`):** Refuses to hallucinate heart rate numbers when optical noise, lighting flicker, or motion corruption violates scientific thresholds.
 - **Challenge Lab:** Interactive stress-test suite simulating camera stutters, illumination conflicts, and shadows to prove robust rejection of corrupted signals.
 - **Verifiable SHA-256 Receipts:** Every session generates an immutable cryptographic receipt enabling third-party audit and reproducible evaluation.
@@ -99,13 +101,27 @@ py -3.12 -m venv .venv
 
 *Note: If Gemma is unconfigured or unavailable, HiperPulse falls back to transparent deterministic commentary. Pulse calculation remains fully functional.*
 
-## Deployment
+## Cloud & Production Deployment
 
-Docker container targeting DigitalOcean App Platform:
+### 1. Render Cloud (Active 24/7 Production Deployment)
+HiperPulse is deployed live in production on Render:
+- **Live URL:** [https://hiperpulse.onrender.com](https://hiperpulse.onrender.com)
+- **Infrastructure Blueprint:** [`render.yaml`](render.yaml)
+
+To deploy your own instance to Render using the included Infrastructure-as-Code Blueprint:
+1. Connect your repository on [dashboard.render.com](https://dashboard.render.com).
+2. Choose **New > Blueprint** and select `render.yaml`.
+3. Set the environment secrets securely in the Render dashboard:
+   - `GEMINI_API_KEY`: Your Google AI Studio API key
+   - `DEMO_TOKEN`: Secret password for Gemma 4 commentary access
+4. Render automatically builds the container and provides continuous deployment on every push to `main`.
+
+### 2. Local Docker Container & DigitalOcean App Platform
 ```bash
 docker build -t hiperpulse .
 docker run --rm -p 8080:8080 --env-file .env hiperpulse
 ```
+For DigitalOcean App Platform, use the preconfigured specification at [`deploy/digitalocean/app.yaml`](deploy/digitalocean/app.yaml).
 
 ## Attribution & References
 
