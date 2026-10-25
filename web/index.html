@@ -18,7 +18,14 @@
   <nav class="site-nav">
     <div class="nav-container">
       <a class="brand" href="/" aria-label="HiperPulse Home">
-        <span class="brand-glyph"></span>
+        <svg class="symbol-emblem" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" stroke="rgba(62, 232, 159, 0.25)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <path d="M7 11 C5 14, 5 18, 7 21" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M25 11 C27 14, 27 18, 25 21" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M10 16 Q13 16 14.5 12 T16 20 T17.5 10 T19 18 T22 16" stroke="#8ae8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="7" cy="16" r="1.5" fill="#3ee89f"/>
+          <circle cx="25" cy="16" r="1.5" fill="#3ee89f"/>
+        </svg>
         <span>HiperPulse</span>
       </a>
       <ul class="nav-links">
@@ -30,7 +37,7 @@
       </ul>
       <div class="nav-actions">
         <span class="badge">GREEN v1.1 // EXPERIMENTAL</span>
-        <a href="#lab" class="btn-nav-enter">Launch Cockpit ↓</a>
+        <a href="#lab" class="btn-nav-enter magnetic-btn">Launch Cockpit ↓</a>
       </div>
     </div>
   </nav>
@@ -53,8 +60,8 @@
           <p>Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.</p>
         </div>
         <div class="hero-actions">
-          <a href="#lab" class="btn-primary-glow">ENTER SIGNAL LAB</a>
-          <a href="#method" class="btn-secondary-ghost">EXPLORE THE METHOD</a>
+          <a href="#lab" class="btn-primary-glow magnetic-btn">ENTER SIGNAL LAB</a>
+          <a href="#method" class="btn-secondary-ghost magnetic-btn">EXPLORE THE METHOD</a>
         </div>
       </div>
 
@@ -130,6 +137,10 @@
             <div class="hud-corner bl"></div>
             <div class="hud-corner br"></div>
             <span class="hud-live-tag">OPTICAL FEED</span>
+            <div class="readiness-hud" id="readinessHud" style="display:none;">
+              <span class="readiness-dot"></span>
+              <span class="readiness-text" id="readinessText">AWAITING CAMERA</span>
+            </div>
           </div>
           <div class="guide" aria-hidden="true">
             <span class="roi left"><span class="roi-label">CHEEK_L</span></span>
@@ -210,8 +221,11 @@
         </div>
 
         <!-- 14 Quality Checks -->
-        <details>
-          <summary>View quality checks and retake guidance</summary>
+        <details class="checks-details" open>
+          <summary>
+            <span class="summary-title">14-GATE SIGNAL INTEGRITY CONSOLE</span>
+            <span class="summary-badge" id="checksSummaryBadge">AWAITING INPUT</span>
+          </summary>
           <div id="checks"></div>
         </details>
 
@@ -226,18 +240,46 @@
         <!-- Evidence Receipts Download Buttons -->
         <div class="buttons">
           <button id="receipt" class="secondary" disabled>Download evidence receipt</button>
-          <button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button>
+          <button id="evidenceCard" class="secondary" disabled>
+            <svg class="symbol-seal" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:15px;height:15px;display:inline-block;vertical-align:text-bottom;margin-right:6px;">
+              <polygon points="12,2 20,6.5 20,15.5 12,20 4,15.5 4,6.5" stroke="#3ee89f" stroke-width="1.5"/>
+              <path d="M8 12 L11 15 L16 9" stroke="#8ae8c4" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>Download judge evidence card</button>
           <button id="trace" class="secondary" disabled>Download input trace</button>
         </div>
 
         <!-- Artifact Challenge Lab -->
         <div class="challenge-card" id="challenges">
-          <h3>Artifact challenge lab</h3>
+          <div class="challenge-header">
+            <h3>Artifact challenge lab</h3>
+            <span class="badge">STRESS EXPERIMENTS</span>
+          </div>
           <p class="hint">Compare this trace with controlled algorithmic stress tests on an in-memory copy. Tests continuity, bilateral agreement, and shared ambient lighting artifacts.</p>
-          <div class="buttons">
-            <button id="challengeA" class="secondary" disabled>Challenge A: Timing dropout</button>
-            <button id="challengeB" class="secondary" disabled>Challenge B: Conflicting patch</button>
-            <button id="challengeC" class="secondary" disabled>Challenge C: Shared periodic light</button>
+          <div class="buttons challenge-buttons">
+            <button id="challengeA" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <line x1="2" y1="10" x2="7" y2="10" stroke="#f1cc8b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="8" y1="6" x2="8" y2="14" stroke="#d96b6b" stroke-width="1.5" stroke-dasharray="2 2"/>
+                <line x1="12" y1="6" x2="12" y2="14" stroke="#d96b6b" stroke-width="1.5" stroke-dasharray="2 2"/>
+                <line x1="13" y1="10" x2="18" y2="10" stroke="#f1cc8b" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Challenge A: Timing dropout</span>
+            </button>
+            <button id="challengeB" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M2 10 Q6 10 9 6 T18 4" stroke="#3ee89f" stroke-width="1.75" stroke-linecap="round"/>
+                <path d="M2 10 Q6 10 9 14 T18 16" stroke="#f1cc8b" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="3 2"/>
+              </svg>
+              <span>Challenge B: Conflicting patch</span>
+            </button>
+            <button id="challengeC" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <circle cx="10" cy="10" r="3" fill="#f1cc8b"/>
+                <path d="M4 10 C4 6.7 6.7 4 10 4" stroke="#f1cc8b" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M16 10 C16 13.3 13.3 16 10 16" stroke="#f1cc8b" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>Challenge C: Shared periodic light</span>
+            </button>
             <button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button>
           </div>
           <p id="comparison"></p>

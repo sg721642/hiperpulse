@@ -687,6 +687,51 @@ body::after {
   border: 1px solid var(--border-line);
 }
 
+/* Pre-Capture Optical Readiness HUD */
+.readiness-hud {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  background: rgba(3, 9, 7, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-line);
+  border-radius: 20px;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 4;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  transition: all 0.25s ease;
+}
+
+.readiness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mint-luminous);
+  box-shadow: 0 0 8px var(--mint-luminous);
+  animation: radar-pulse 1.8s infinite;
+}
+
+.readiness-hud.warning .readiness-dot {
+  background: var(--amber-warning);
+  box-shadow: 0 0 8px var(--amber-warning);
+}
+
+.readiness-hud.warning {
+  border-color: rgba(241, 204, 139, 0.45);
+  color: var(--amber-warning);
+}
+
+.readiness-hud.optimal {
+  border-color: rgba(62, 232, 159, 0.45);
+  color: var(--mint-luminous);
+}
+
 /* Scanning Sweep Laser */
 .scan-bar {
   position: absolute;
@@ -1083,11 +1128,48 @@ details[open] summary::after {
   transform: rotate(180deg);
 }
 
+.checks-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.summary-title {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-white);
+}
+
+.summary-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(111, 146, 138, 0.15);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-line);
+}
+
+.summary-badge.accepted {
+  background: rgba(62, 232, 159, 0.15);
+  color: var(--mint-luminous);
+  border-color: rgba(62, 232, 159, 0.4);
+}
+
+.summary-badge.withheld {
+  background: rgba(241, 204, 139, 0.15);
+  color: var(--amber-warning);
+  border-color: rgba(241, 204, 139, 0.4);
+}
+
 #checks {
   margin-top: 18px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
 .check {
@@ -1098,7 +1180,19 @@ details[open] summary::after {
   font-size: 12.5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.check.check-fail {
+  border-color: rgba(241, 204, 139, 0.35);
+  background: rgba(241, 204, 139, 0.04);
+}
+
+.check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .check strong {
@@ -1106,6 +1200,30 @@ details[open] summary::after {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.4px;
+}
+
+.check-gauge {
+  width: 100%;
+  height: 3px;
+  background: rgba(16, 37, 29, 0.6);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 2px 0;
+}
+
+.gauge-fill {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.gauge-fill.pass {
+  background: var(--mint-luminous);
+  box-shadow: 0 0 6px rgba(62, 232, 159, 0.5);
+}
+
+.gauge-fill.fail {
+  background: var(--amber-warning);
+  box-shadow: 0 0 6px rgba(241, 204, 139, 0.5);
 }
 
 .pass {
@@ -1126,10 +1244,16 @@ details[open] summary::after {
   color: var(--amber-warning);
 }
 
+.check div.check-action,
 .check div {
   font-size: 11.5px;
-  color: var(--text-secondary);
+  color: var(--amber-warning);
   line-height: 1.45;
+  background: rgba(241, 204, 139, 0.08);
+  padding: 6px 10px;
+  border-radius: 4px;
+  border-left: 2px solid var(--amber-warning);
+  margin-top: 4px;
 }
 
 /* Guided Retake Section */
@@ -1357,4 +1481,59 @@ a:focus-visible {
   .telemetry-row {
     font-size: 11.5px;
   }
+}
+
+/* --- 15. SYMBOL SYSTEM & ARTIFACT GLYPHS --- */
+.symbol-emblem {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.brand:hover .symbol-emblem {
+  transform: rotate(15deg) scale(1.08);
+}
+
+.symbol-seal {
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 4px rgba(62, 232, 159, 0.4));
+}
+
+.artifact-glyph {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.challenge-buttons button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* --- 16. MAGNETIC BUTTON INTERACTIONS --- */
+.magnetic-btn {
+  transition: transform 0.12s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.2s, border-color 0.2s;
+  will-change: transform;
+}
+
+/* --- 17. LOW-RESOURCE RECORDING MODE --- */
+body.is-capturing .hero-section {
+  opacity: 0.2;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+body.is-capturing .hero-canvas {
+  visibility: hidden;
+}
+
+body.is-capturing .hud-grid {
+  opacity: 0.2;
 }

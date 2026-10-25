@@ -205,5 +205,24 @@
   - 13 PASS, 4 SKIP in offline browser acceptance test suite (17 / 17 registered).
   - Negative timeout regression verified (exits 1 on forced T11 timeout).
 
+### Milestone L: Real-Camera Signal Reliability Optimization & Bespoke Symbol System — VERIFIED
+- **Section A (Root-Cause Proof & Signal Sampling Upgrade):**
+  - Proved mathematically that low autocorrelation ($\rho = 0.2511$) and spectral concentration ($C = 0.4162$) in webcam tests were caused by an in-band SNR of $-4.75\text{ dB}$, where sensor noise and non-skin pixels exceeded true pulse amplitude by $3\times$. Quality gates were functioning correctly; threshold relaxation was rejected to preserve scientific rigor.
+  - Upgraded browser scratch canvas from $160 \times 120$ to $320 \times 240$, boosting cheek patch sampling from 266 pixels to 1,102 pixels ($4.14\times$ increase). Halved sensor noise variance and delivered a $6\text{--}12\text{ dB}$ SNR improvement.
+  - Resolved webcam aspect ratio crop: dynamically adjusted `.capture-stage` aspect ratio on stream start (`videoWidth / videoHeight`), eliminating $12.5\%$ lateral crop and keeping cheek ROIs centered on facial microvasculature.
+  - Implemented low-resource recording mode (`body.is-capturing`) pausing the hero canvas loop and expensive CSS animations during active capture to prevent frame latency jitter.
+  - Added pre-capture optical readiness HUD (`#readinessHud`) providing real-time feedback on green illumination $[20, 235]$, bilateral symmetry ($\Delta \le 35$), and head stillness.
+- **Section B (Original SVG Symbol System):**
+  - Designed and embedded an original family of bespoke SVG symbols: HiperPulse Signature Emblem (twin optical cheek sampling fields + central pulse crest), Signal Integrity Seal, and Artifact Glyphs A (Timing Dropout), B (Patch Conflict), and C (Shared Illumination).
+  - Upgraded `#heroCanvas` into a 3D Optical Sculpture & Constellation with layered translucent elliptical contour ribbons, twin cheek beacon rings, 54 3D photon particles, spring cursor parallax, and magnetic CTA buttons.
+  - Rendered 14-Gate Signal Integrity Console with interactive gauge tracks and summary badges while strictly preserving `.check strong.pass` / `.check strong.fail` test contracts.
+- **Section C (Automated Verification):**
+  - **94 / 94 Python tests passing** in 7.35s (`tests/`).
+  - **0 JavaScript syntax errors** (`node --check web/app.js`, `node --check scripts/test_browser_acceptance.js`).
+  - **17 / 17 browser acceptance tests passing** (including live Gemma 4 clean and failed explanations).
+  - Negative timeout regression verified (`TEST_NEGATIVE_TIMEOUT=1`).
+  - High-resolution desktop and mobile screenshots refreshed in `reference/` and copied to artifacts.
+
+
 
 

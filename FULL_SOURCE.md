@@ -4619,8 +4619,61 @@ function initBuildMeta() {
 }
 initBuildMeta();
 const scratch = document.createElement('canvas');
-scratch.width = 160; scratch.height = 120;
+scratch.width = 320; scratch.height = 240;
 const ctx = scratch.getContext('2d', {willReadFrequently:true});
+
+let readinessTimer = null;
+let lastGreenSample = null;
+
+function updateStageAspectRatio() {
+  if (video.videoWidth && video.videoHeight) {
+    const ar = video.videoWidth / video.videoHeight;
+    const stage = $('captureStage');
+    if (stage) stage.style.aspectRatio = `${ar}`;
+  }
+}
+
+function checkReadiness() {
+  const hud = $('readinessHud');
+  const text = $('readinessText');
+  if (!hud || !text) return;
+  if (!stream || capturing) {
+    hud.style.display = 'none';
+    return;
+  }
+  hud.style.display = 'flex';
+  try {
+    const val = colors();
+    const leftG = val.left[1];
+    const rightG = val.right[1];
+    const meanG = (leftG + rightG) / 2;
+    const diffG = Math.abs(leftG - rightG);
+    let motion = 0;
+    if (lastGreenSample !== null) {
+      motion = Math.abs(meanG - lastGreenSample);
+    }
+    lastGreenSample = meanG;
+
+    if (meanG < 20) {
+      hud.className = 'readiness-hud warning';
+      text.textContent = `TOO DARK (${Math.round(meanG)}/255) · ADD FRONT LIGHT`;
+    } else if (meanG > 235) {
+      hud.className = 'readiness-hud warning';
+      text.textContent = `OVEREXPOSED (${Math.round(meanG)}/255) · REDUCE GLARE`;
+    } else if (diffG > 35) {
+      hud.className = 'readiness-hud warning';
+      text.textContent = `UNEVEN SHADOWS (Δ${Math.round(diffG)}) · FACE LIGHT EVENLY`;
+    } else if (motion > 2.0) {
+      hud.className = 'readiness-hud warning';
+      text.textContent = `MOTION DETECTED · HOLD HEAD STEADY`;
+    } else {
+      hud.className = 'readiness-hud optimal';
+      text.textContent = `READY · LIGHT ${Math.round(meanG)}/255 · POSITION STEADY`;
+    }
+  } catch (_e) {
+    hud.style.display = 'none';
+  }
+}
 
 function status(text) { $('status').textContent = text; }
 function controls() {
@@ -4638,7 +4691,15 @@ function controls() {
 function stopMedia() {
   capturing = false; generation++;
   clearTimeout(captureTimer);
-  const stage = $('captureStage'); if (stage) stage.classList.remove('scanning');
+  if (readinessTimer) { clearInterval(readinessTimer); readinessTimer = null; }
+  lastGreenSample = null;
+  document.body.classList.remove('is-capturing');
+  const stage = $('captureStage');
+  if (stage) {
+    stage.classList.remove('scanning');
+    stage.style.aspectRatio = '';
+  }
+  if ($('readinessHud')) $('readinessHud').style.display = 'none';
   if (stream) stream.getTracks().forEach(track => track.stop());
   stream = null; video.pause(); video.srcObject = null;
   video.removeAttribute('src'); video.load();
@@ -4790,7 +4851,11 @@ function getRetakeAdvice(checks) {
   // Priority 2: Movement & Facial Stability
   else if (failedNames.has('color_jump_proxy') || failedNames.has('relative_signal_std') || failedNames.has('spectral_concentration') || failedNames.has('autocorrelation')) {
     category = 'stability';
-    primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
+    if (!failedNames.has('color_jump_proxy') && (failedNames.has('spectral_concentration') || failedNames.has('autocorrelation'))) {
+      primary = 'Frequency evidence is diffuse across multiple peaks or cycle-to-cycle periodicity is low (spectral concentration < 0.50 or autocorrelation < 0.45). A stable repeating pulse could not be isolated from background sensor noise. Ensure steady, indirect front lighting across both cheeks, rest your chin to eliminate micro-motion, and confirm bare cheek skin fills both guide boxes.';
+    } else {
+      primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
+    }
   }
   // Priority 3: Facial Alignment & Bilateral Symmetry
   else if (failedNames.has('patch_difference_bpm') || failedNames.has('half_difference_bpm') || failedNames.has('estimator_difference_bpm')) {
@@ -4844,13 +4909,28 @@ function render(r) {
     $('source').textContent = `${src.toUpperCase()} · EXPERIMENTAL`;
   }
   $('decision').textContent = r.bpm === null ? 'Estimate withheld. Inspect the failed checks below.' : 'Heuristic checks passed. Biological origin and accuracy are unverified.';
+  if ($('checksSummaryBadge')) {
+    const passCount = r.checks.filter(c => c.pass).length;
+    $('checksSummaryBadge').textContent = `${passCount}/14 PASSED · ${r.quality_score}% SCORE · ${r.bpm !== null ? 'ACCEPTED' : 'ESTIMATE WITHHELD'}`;
+    $('checksSummaryBadge').className = `summary-badge ${r.bpm !== null ? 'accepted' : 'withheld'}`;
+  }
   $('checks').replaceChildren();
   for (const check of r.checks) {
-    const row=document.createElement('div'); row.className='check';
-    const title=document.createElement('strong'); title.className=check.pass?'pass':'fail';
-    title.textContent=`${check.pass?'PASS':'FAIL'} · ${check.name.replaceAll('_',' ')}: ${check.value} (${check.rule})`;
-    row.append(title);
-    if(!check.pass){const p=document.createElement('div');p.textContent=check.action;row.append(p);}
+    const row = document.createElement('div'); row.className = `check ${check.pass ? 'check-pass' : 'check-fail'}`;
+    const header = document.createElement('div'); header.className = 'check-header';
+    const title = document.createElement('strong'); title.className = check.pass ? 'pass' : 'fail';
+    title.textContent = `${check.pass ? 'PASS' : 'FAIL'} · ${check.name.replaceAll('_', ' ')}: ${check.value} (${check.rule})`;
+    header.append(title);
+    const gauge = document.createElement('div'); gauge.className = 'check-gauge';
+    const fill = document.createElement('div'); fill.className = `gauge-fill ${check.pass ? 'pass' : 'fail'}`;
+    fill.style.width = check.pass ? '100%' : '35%';
+    gauge.append(fill);
+    row.append(header, gauge);
+    if (!check.pass) {
+      const p = document.createElement('div'); p.className = 'check-action';
+      p.textContent = check.action;
+      row.append(p);
+    }
     $('checks').append(row);
   }
   const advice = getRetakeAdvice(r.checks);
@@ -4902,18 +4982,50 @@ $('camera').onclick=async()=>{
   stopMedia(); blank();busy=true;controls();const op=++operation;
   try{
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Camera requires HTTPS or localhost in a supported browser.');
-    const incoming=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}}});
+    const incoming=await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{
+        facingMode:'user',
+        width:{ideal:640},
+        height:{ideal:480},
+        frameRate:{ideal:30}
+      }
+    });
     if(op!==operation){incoming.getTracks().forEach(t=>t.stop());return;}
     stream=incoming;video.srcObject=stream;await video.play();
+    updateStageAspectRatio();
+    video.onloadedmetadata = updateStageAspectRatio;
+
+    // Apply continuous camera modes where available to prevent exposure hunting
+    const [track] = stream.getVideoTracks();
+    if (track && track.getCapabilities) {
+      try {
+        const caps = track.getCapabilities();
+        const adv = {};
+        if (caps.exposureMode?.includes('continuous')) adv.exposureMode = 'continuous';
+        if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
+        if (caps.focusMode?.includes('continuous')) adv.focusMode = 'continuous';
+        if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] });
+      } catch (_e) {}
+    }
+
+    if (readinessTimer) clearInterval(readinessTimer);
+    readinessTimer = setInterval(checkReadiness, 200);
+
     status('Align the boxes onto both cheeks. Let exposure settle for five seconds, then capture.');
   }catch(e){stopMedia();status(`Camera unavailable: ${e.message}. You can still use a synthetic sample.`);}
   finally{busy=false;controls();}
 };
 function colors() {
-  ctx.drawImage(video,0,0,160,120);
+  ctx.drawImage(video,0,0,320,240);
   let clipped=0,total=0;const means=[];
-  for(const x of [Math.round(160*.32),Math.round(160*.56)]){
-    const pixels=ctx.getImageData(x,Math.round(120*.48),Math.round(160*.12),Math.round(120*.12)).data;
+  const x1 = Math.round(320 * 0.32);
+  const x2 = Math.round(320 * 0.56);
+  const y = Math.round(240 * 0.48);
+  const w = Math.round(320 * 0.12);
+  const h = Math.round(240 * 0.12);
+  for(const x of [x1, x2]){
+    const pixels=ctx.getImageData(x, y, w, h).data;
     const sums=[0,0,0];
     for(let i=0;i<pixels.length;i+=4){for(let c=0;c<3;c++)sums[c]+=pixels[i+c];
       if(pixels[i+1]<=5||pixels[i+1]>=250)clipped++;total++;}
@@ -4925,7 +5037,11 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
+  document.body.classList.add('is-capturing');
+  if (readinessTimer) { clearInterval(readinessTimer); readinessTimer = null; }
+  if ($('readinessHud')) $('readinessHud').style.display = 'none';
   const stage = $('captureStage'); if (stage) stage.classList.add('scanning');
+  updateStageAspectRatio();
   const ingestion = source==='camera'?'live_capture':(source==='synthetic'?'synthetic_fixture':'local_video');
   const trace={source,ingestion,timestamps:[],left:[],right:[],clipping:[]};let first=null;
   const finish=()=>{if(ticket!==generation)return;stopMedia();runTrace(trace);};
@@ -4964,6 +5080,7 @@ $('file').onchange=async e=>{
   }
   localUrl=URL.createObjectURL(file);selectedVideo=true;video.src=localUrl;
   video.onloadedmetadata=()=>{
+    updateStageAspectRatio();
     videoUsable=Number.isFinite(video.duration)&&video.duration>=10&&video.duration<=60;
     const originLabel=selectedVideoSource==='synthetic'?'synthetic fixture':'local video (unverified origin)';
     status(videoUsable?`Preview alignment, then process (${originLabel}). The first 30 seconds are used.`:'Use a browser-decodable video with a duration of 10–60 seconds.');controls();
@@ -5195,17 +5312,18 @@ window.addEventListener('pagehide',stopMedia);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&capturing){stopMedia();status('Capture discarded because the tab was hidden.');}});
 controls();
 
-// Active Theory Inspired Living Signal Simulation (Hero Canvas)
+// Active Theory × Vizo Inspired 3D Optical Sculpture & Living Constellation
 function initHeroCanvas() {
   const canvas = $('heroCanvas');
   if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext('2d');
   let width = 0, height = 0;
   let animId = null;
-  const mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000 };
+  const mouse = { x: 0, y: 0, targetX: 0, targetY: 0 };
   const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const nodeCount = 48;
+  const startTime = performance.now();
+  const nodeCount = 54;
   const nodes = [];
 
   function resize() {
@@ -5215,13 +5333,15 @@ function initHeroCanvas() {
     if (!nodes.length) {
       for (let i = 0; i < nodeCount; i++) {
         nodes.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
+          x: (Math.random() - 0.5) * width * 0.9,
+          y: (Math.random() - 0.5) * height * 0.8,
+          z: (Math.random() - 0.5) * 400,
           vx: (Math.random() - 0.5) * 0.35,
           vy: (Math.random() - 0.5) * 0.35,
-          radius: Math.random() * 1.8 + 1.0,
+          vz: (Math.random() - 0.5) * 0.4,
+          radius: Math.random() * 1.8 + 0.8,
           phase: Math.random() * Math.PI * 2,
-          pulseSpeed: 0.015 + Math.random() * 0.025
+          pulseSpeed: 0.012 + Math.random() * 0.02
         });
       }
     }
@@ -5232,13 +5352,15 @@ function initHeroCanvas() {
 
   window.addEventListener('pointermove', e => {
     const rect = canvas.getBoundingClientRect();
-    mouse.targetX = e.clientX - rect.left;
-    mouse.targetY = e.clientY - rect.top;
+    const nx = (e.clientX - rect.left) / (rect.width || 1) - 0.5;
+    const ny = (e.clientY - rect.top) / (rect.height || 1) - 0.5;
+    mouse.targetX = nx * 50;
+    mouse.targetY = ny * 35;
   }, { passive: true });
 
   window.addEventListener('pointerleave', () => {
-    mouse.targetX = -1000;
-    mouse.targetY = -1000;
+    mouse.targetX = 0;
+    mouse.targetY = 0;
   }, { passive: true });
 
   let isVisible = true;
@@ -5262,55 +5384,152 @@ function initHeroCanvas() {
   function draw() {
     ctx.clearRect(0, 0, width, height);
 
-    mouse.x += (mouse.targetX - mouse.x) * 0.06;
-    mouse.y += (mouse.targetY - mouse.y) * 0.06;
+    // Damped camera tilt
+    mouse.x += (mouse.targetX - mouse.x) * 0.05;
+    mouse.y += (mouse.targetY - mouse.y) * 0.05;
 
+    const now = performance.now();
+    const elapsedSec = (now - startTime) / 1000;
+    const unfold = Math.min(1.0, elapsedSec / 1.6);
+    const easeUnfold = 1 - Math.pow(1 - unfold, 3);
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const fov = 450;
+
+    // 1. Draw 3D Translucent Optical Sculpture (Elliptical Contour Ribbons)
+    const ringCount = 7;
+    const sculptureT = elapsedSec * 0.6;
+    for (let r = 0; r < ringCount; r++) {
+      const ringFrac = r / (ringCount - 1);
+      const ringYOffset = (ringFrac - 0.5) * 220 * easeUnfold;
+      const radiusX = Math.sin(ringFrac * Math.PI) * 140 * easeUnfold + 20;
+      const radiusZ = radiusX * 0.85;
+
+      ctx.beginPath();
+      const segs = 36;
+      let firstPt = null;
+      for (let s = 0; s <= segs; s++) {
+        const theta = (s / segs) * Math.PI * 2 + sculptureT * 0.15 * (r % 2 === 0 ? 1 : -1);
+        const lx = Math.cos(theta) * radiusX;
+        const ly = ringYOffset + Math.sin(theta * 2 + sculptureT) * 6;
+        const lz = Math.sin(theta) * radiusZ;
+
+        // Apply mouse tilt
+        const rotX = (mouse.y * 0.015);
+        const rotY = (mouse.x * 0.015);
+        const yRotated = ly * Math.cos(rotX) - lz * Math.sin(rotX);
+        const zRotated = ly * Math.sin(rotX) + lz * Math.cos(rotX);
+        const xRotated = lx * Math.cos(rotY) + zRotated * Math.sin(rotY);
+        const finalZ = -lx * Math.sin(rotY) + zRotated * Math.cos(rotY);
+
+        const scale = fov / (fov + finalZ + 300);
+        const px = cx + xRotated * scale;
+        const py = cy + yRotated * scale;
+
+        if (s === 0) { ctx.moveTo(px, py); firstPt = { px, py }; }
+        else { ctx.lineTo(px, py); }
+      }
+      const ringAlpha = (0.04 + Math.sin(ringFrac * Math.PI) * 0.08) * easeUnfold;
+      ctx.strokeStyle = `rgba(138, 232, 196, ${ringAlpha})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // 2. Twin Optical Cheek Fields in 3D
+    const cheekPoints = [
+      { x: -55 * easeUnfold, y: 15 * easeUnfold, label: 'CHEEK_L' },
+      { x: 55 * easeUnfold, y: 15 * easeUnfold, label: 'CHEEK_R' }
+    ];
+    for (let c = 0; c < cheekPoints.length; c++) {
+      const pt = cheekPoints[c];
+      const rotX = mouse.y * 0.015;
+      const rotY = mouse.x * 0.015;
+      const yRot = pt.y * Math.cos(rotX);
+      const zRot = pt.y * Math.sin(rotX);
+      const xRot = pt.x * Math.cos(rotY) + zRot * Math.sin(rotY);
+      const scale = fov / (fov + zRot + 300);
+      const px = cx + xRot * scale;
+      const py = cy + yRot * scale;
+
+      // Pulse beacon ring
+      const beaconR = (8 + (Math.sin(sculptureT * 3 + c * Math.PI) + 1) * 6) * scale * easeUnfold;
+      ctx.strokeStyle = 'rgba(62, 232, 159, 0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(1, beaconR), 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(62, 232, 159, 0.9)';
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(1, 2.5 * scale * easeUnfold), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Ambient Photon Cloud Nodes
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       if (!prefersReduced) {
-        n.x += n.vx;
-        n.y += n.vy;
+        n.x += n.vx; n.y += n.vy; n.z += n.vz;
         n.phase += n.pulseSpeed;
-
-        if (n.x < 0) { n.x = 0; n.vx *= -1; }
-        else if (n.x > width) { n.x = width; n.vx *= -1; }
-        if (n.y < 0) { n.y = 0; n.vy *= -1; }
-        else if (n.y > height) { n.y = height; n.vy *= -1; }
-
-        const dx = n.x - mouse.x;
-        const dy = n.y - mouse.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 130 && dist > 0) {
-          const force = (130 - dist) / 130 * 0.6;
-          n.x += (dx / dist) * force;
-          n.y += (dy / dist) * force;
-        }
+        const bX = width * 0.48, bY = height * 0.42;
+        if (n.x < -bX) { n.x = -bX; n.vx *= -1; }
+        else if (n.x > bX) { n.x = bX; n.vx *= -1; }
+        if (n.y < -bY) { n.y = -bY; n.vy *= -1; }
+        else if (n.y > bY) { n.y = bY; n.vy *= -1; }
+        if (n.z < -200) { n.z = -200; n.vz *= -1; }
+        else if (n.z > 200) { n.z = 200; n.vz *= -1; }
       }
 
+      const rotX = mouse.y * 0.012;
+      const rotY = mouse.x * 0.012;
+      const yR = n.y * Math.cos(rotX) - n.z * Math.sin(rotX);
+      const zR = n.y * Math.sin(rotX) + n.z * Math.cos(rotX);
+      const xR = n.x * Math.cos(rotY) + zR * Math.sin(rotY);
+      const finalZ = -n.x * Math.sin(rotY) + zR * Math.cos(rotY);
+
+      const scale = fov / (fov + finalZ + 300);
+      const px = cx + xR * scale;
+      const py = cy + yR * scale;
+
+      // Connecting lines
       for (let j = i + 1; j < nodes.length; j++) {
         const n2 = nodes[j];
-        const dist2 = Math.hypot(n.x - n2.x, n.y - n2.y);
-        if (dist2 < 110) {
-          const alpha = (1 - dist2 / 110) * 0.14;
+        const dist = Math.hypot(n.x - n2.x, n.y - n2.y, n.z - n2.z);
+        if (dist < 100) {
+          const alpha = (1 - dist / 100) * 0.12 * easeUnfold;
+          const yR2 = n2.y * Math.cos(rotX) - n2.z * Math.sin(rotX);
+          const zR2 = n2.y * Math.sin(rotX) + n2.z * Math.cos(rotX);
+          const xR2 = n2.x * Math.cos(rotY) + zR2 * Math.sin(rotY);
+          const s2 = fov / (fov + zR2 + 300);
+          const px2 = cx + xR2 * s2;
+          const py2 = cy + yR2 * s2;
+
           ctx.strokeStyle = `rgba(138, 232, 196, ${alpha})`;
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 0.8;
           ctx.beginPath();
-          ctx.moveTo(n.x, n.y);
-          ctx.lineTo(n2.x, n2.y);
+          ctx.moveTo(px, py);
+          ctx.lineTo(px2, py2);
           ctx.stroke();
         }
       }
 
-      const currentRadius = n.radius + Math.sin(n.phase) * 0.5;
-      ctx.fillStyle = 'rgba(62, 232, 159, 0.75)';
+      const curRadius = Math.max(0.6, (n.radius + Math.sin(n.phase) * 0.4) * scale * easeUnfold);
+      const nodeAlpha = Math.min(0.85, (0.35 + (finalZ + 200) / 400 * 0.45) * easeUnfold);
+      ctx.fillStyle = `rgba(62, 232, 159, ${nodeAlpha})`;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, Math.max(0.5, currentRadius), 0, Math.PI * 2);
+      ctx.arc(px, py, curRadius, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
   function loop() {
     if (!isVisible || document.hidden || prefersReduced) return;
+    // Low-resource capture mode: halt drawing during active recording
+    if (capturing || document.body.classList.contains('is-capturing')) {
+      animId = requestAnimationFrame(loop);
+      return;
+    }
     draw();
     animId = requestAnimationFrame(loop);
   }
@@ -5319,10 +5538,31 @@ function initHeroCanvas() {
   else draw();
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initHeroCanvas);
-} else {
+// Magnetic Button Interaction
+function initMagneticButtons() {
+  const btns = document.querySelectorAll('.magnetic-btn');
+  btns.forEach(btn => {
+    btn.addEventListener('mousemove', e => {
+      const rect = btn.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      btn.style.transform = `translate(${x * 0.22}px, ${y * 0.22}px)`;
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = '';
+    });
+  });
+}
+
+function initApp() {
   initHeroCanvas();
+  initMagneticButtons();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
 }
 ```
 
@@ -5350,7 +5590,14 @@ if (document.readyState === 'loading') {
   <nav class="site-nav">
     <div class="nav-container">
       <a class="brand" href="/" aria-label="HiperPulse Home">
-        <span class="brand-glyph"></span>
+        <svg class="symbol-emblem" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" stroke="rgba(62, 232, 159, 0.25)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <path d="M7 11 C5 14, 5 18, 7 21" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M25 11 C27 14, 27 18, 25 21" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M10 16 Q13 16 14.5 12 T16 20 T17.5 10 T19 18 T22 16" stroke="#8ae8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="7" cy="16" r="1.5" fill="#3ee89f"/>
+          <circle cx="25" cy="16" r="1.5" fill="#3ee89f"/>
+        </svg>
         <span>HiperPulse</span>
       </a>
       <ul class="nav-links">
@@ -5362,7 +5609,7 @@ if (document.readyState === 'loading') {
       </ul>
       <div class="nav-actions">
         <span class="badge">GREEN v1.1 // EXPERIMENTAL</span>
-        <a href="#lab" class="btn-nav-enter">Launch Cockpit ↓</a>
+        <a href="#lab" class="btn-nav-enter magnetic-btn">Launch Cockpit ↓</a>
       </div>
     </div>
   </nav>
@@ -5385,8 +5632,8 @@ if (document.readyState === 'loading') {
           <p>Experimental wellness prototype. Not a medical device. No clinical accuracy, diagnosis, blood pressure, or oxygen saturation.</p>
         </div>
         <div class="hero-actions">
-          <a href="#lab" class="btn-primary-glow">ENTER SIGNAL LAB</a>
-          <a href="#method" class="btn-secondary-ghost">EXPLORE THE METHOD</a>
+          <a href="#lab" class="btn-primary-glow magnetic-btn">ENTER SIGNAL LAB</a>
+          <a href="#method" class="btn-secondary-ghost magnetic-btn">EXPLORE THE METHOD</a>
         </div>
       </div>
 
@@ -5462,6 +5709,10 @@ if (document.readyState === 'loading') {
             <div class="hud-corner bl"></div>
             <div class="hud-corner br"></div>
             <span class="hud-live-tag">OPTICAL FEED</span>
+            <div class="readiness-hud" id="readinessHud" style="display:none;">
+              <span class="readiness-dot"></span>
+              <span class="readiness-text" id="readinessText">AWAITING CAMERA</span>
+            </div>
           </div>
           <div class="guide" aria-hidden="true">
             <span class="roi left"><span class="roi-label">CHEEK_L</span></span>
@@ -5542,8 +5793,11 @@ if (document.readyState === 'loading') {
         </div>
 
         <!-- 14 Quality Checks -->
-        <details>
-          <summary>View quality checks and retake guidance</summary>
+        <details class="checks-details" open>
+          <summary>
+            <span class="summary-title">14-GATE SIGNAL INTEGRITY CONSOLE</span>
+            <span class="summary-badge" id="checksSummaryBadge">AWAITING INPUT</span>
+          </summary>
           <div id="checks"></div>
         </details>
 
@@ -5558,18 +5812,46 @@ if (document.readyState === 'loading') {
         <!-- Evidence Receipts Download Buttons -->
         <div class="buttons">
           <button id="receipt" class="secondary" disabled>Download evidence receipt</button>
-          <button id="evidenceCard" class="secondary" disabled>Download judge evidence card</button>
+          <button id="evidenceCard" class="secondary" disabled>
+            <svg class="symbol-seal" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:15px;height:15px;display:inline-block;vertical-align:text-bottom;margin-right:6px;">
+              <polygon points="12,2 20,6.5 20,15.5 12,20 4,15.5 4,6.5" stroke="#3ee89f" stroke-width="1.5"/>
+              <path d="M8 12 L11 15 L16 9" stroke="#8ae8c4" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>Download judge evidence card</button>
           <button id="trace" class="secondary" disabled>Download input trace</button>
         </div>
 
         <!-- Artifact Challenge Lab -->
         <div class="challenge-card" id="challenges">
-          <h3>Artifact challenge lab</h3>
+          <div class="challenge-header">
+            <h3>Artifact challenge lab</h3>
+            <span class="badge">STRESS EXPERIMENTS</span>
+          </div>
           <p class="hint">Compare this trace with controlled algorithmic stress tests on an in-memory copy. Tests continuity, bilateral agreement, and shared ambient lighting artifacts.</p>
-          <div class="buttons">
-            <button id="challengeA" class="secondary" disabled>Challenge A: Timing dropout</button>
-            <button id="challengeB" class="secondary" disabled>Challenge B: Conflicting patch</button>
-            <button id="challengeC" class="secondary" disabled>Challenge C: Shared periodic light</button>
+          <div class="buttons challenge-buttons">
+            <button id="challengeA" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <line x1="2" y1="10" x2="7" y2="10" stroke="#f1cc8b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="8" y1="6" x2="8" y2="14" stroke="#d96b6b" stroke-width="1.5" stroke-dasharray="2 2"/>
+                <line x1="12" y1="6" x2="12" y2="14" stroke="#d96b6b" stroke-width="1.5" stroke-dasharray="2 2"/>
+                <line x1="13" y1="10" x2="18" y2="10" stroke="#f1cc8b" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Challenge A: Timing dropout</span>
+            </button>
+            <button id="challengeB" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M2 10 Q6 10 9 6 T18 4" stroke="#3ee89f" stroke-width="1.75" stroke-linecap="round"/>
+                <path d="M2 10 Q6 10 9 14 T18 16" stroke="#f1cc8b" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="3 2"/>
+              </svg>
+              <span>Challenge B: Conflicting patch</span>
+            </button>
+            <button id="challengeC" class="secondary" disabled>
+              <svg class="artifact-glyph" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <circle cx="10" cy="10" r="3" fill="#f1cc8b"/>
+                <path d="M4 10 C4 6.7 6.7 4 10 4" stroke="#f1cc8b" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M16 10 C16 13.3 13.3 16 10 16" stroke="#f1cc8b" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>Challenge C: Shared periodic light</span>
+            </button>
             <button id="stress" class="secondary" style="display:none;" disabled aria-hidden="true">Legacy stress</button>
           </div>
           <p id="comparison"></p>
@@ -6332,6 +6614,51 @@ body::after {
   border: 1px solid var(--border-line);
 }
 
+/* Pre-Capture Optical Readiness HUD */
+.readiness-hud {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  background: rgba(3, 9, 7, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-line);
+  border-radius: 20px;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 4;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  transition: all 0.25s ease;
+}
+
+.readiness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mint-luminous);
+  box-shadow: 0 0 8px var(--mint-luminous);
+  animation: radar-pulse 1.8s infinite;
+}
+
+.readiness-hud.warning .readiness-dot {
+  background: var(--amber-warning);
+  box-shadow: 0 0 8px var(--amber-warning);
+}
+
+.readiness-hud.warning {
+  border-color: rgba(241, 204, 139, 0.45);
+  color: var(--amber-warning);
+}
+
+.readiness-hud.optimal {
+  border-color: rgba(62, 232, 159, 0.45);
+  color: var(--mint-luminous);
+}
+
 /* Scanning Sweep Laser */
 .scan-bar {
   position: absolute;
@@ -6728,11 +7055,48 @@ details[open] summary::after {
   transform: rotate(180deg);
 }
 
+.checks-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.summary-title {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-white);
+}
+
+.summary-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(111, 146, 138, 0.15);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-line);
+}
+
+.summary-badge.accepted {
+  background: rgba(62, 232, 159, 0.15);
+  color: var(--mint-luminous);
+  border-color: rgba(62, 232, 159, 0.4);
+}
+
+.summary-badge.withheld {
+  background: rgba(241, 204, 139, 0.15);
+  color: var(--amber-warning);
+  border-color: rgba(241, 204, 139, 0.4);
+}
+
 #checks {
   margin-top: 18px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
 .check {
@@ -6743,7 +7107,19 @@ details[open] summary::after {
   font-size: 12.5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.check.check-fail {
+  border-color: rgba(241, 204, 139, 0.35);
+  background: rgba(241, 204, 139, 0.04);
+}
+
+.check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .check strong {
@@ -6751,6 +7127,30 @@ details[open] summary::after {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.4px;
+}
+
+.check-gauge {
+  width: 100%;
+  height: 3px;
+  background: rgba(16, 37, 29, 0.6);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 2px 0;
+}
+
+.gauge-fill {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.gauge-fill.pass {
+  background: var(--mint-luminous);
+  box-shadow: 0 0 6px rgba(62, 232, 159, 0.5);
+}
+
+.gauge-fill.fail {
+  background: var(--amber-warning);
+  box-shadow: 0 0 6px rgba(241, 204, 139, 0.5);
 }
 
 .pass {
@@ -6771,10 +7171,16 @@ details[open] summary::after {
   color: var(--amber-warning);
 }
 
+.check div.check-action,
 .check div {
   font-size: 11.5px;
-  color: var(--text-secondary);
+  color: var(--amber-warning);
   line-height: 1.45;
+  background: rgba(241, 204, 139, 0.08);
+  padding: 6px 10px;
+  border-radius: 4px;
+  border-left: 2px solid var(--amber-warning);
+  margin-top: 4px;
 }
 
 /* Guided Retake Section */
@@ -7002,6 +7408,61 @@ a:focus-visible {
   .telemetry-row {
     font-size: 11.5px;
   }
+}
+
+/* --- 15. SYMBOL SYSTEM & ARTIFACT GLYPHS --- */
+.symbol-emblem {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.brand:hover .symbol-emblem {
+  transform: rotate(15deg) scale(1.08);
+}
+
+.symbol-seal {
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 4px rgba(62, 232, 159, 0.4));
+}
+
+.artifact-glyph {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.challenge-buttons button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* --- 16. MAGNETIC BUTTON INTERACTIONS --- */
+.magnetic-btn {
+  transition: transform 0.12s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.2s, border-color 0.2s;
+  will-change: transform;
+}
+
+/* --- 17. LOW-RESOURCE RECORDING MODE --- */
+body.is-capturing .hero-section {
+  opacity: 0.2;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+body.is-capturing .hero-canvas {
+  visibility: hidden;
+}
+
+body.is-capturing .hud-grid {
+  opacity: 0.2;
 }
 ```
 
