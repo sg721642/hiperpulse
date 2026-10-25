@@ -1537,3 +1537,260 @@ body.is-capturing .hero-canvas {
 body.is-capturing .hud-grid {
   opacity: 0.2;
 }
+
+/* --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) --- */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: var(--bg-void);
+  pointer-events: auto;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s var(--ease-out-expo), visibility 0.8s var(--ease-out-expo);
+  will-change: opacity, visibility;
+}
+
+.intro-overlay.intro-dismissed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.intro-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.intro-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 24px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.intro-telemetry {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.intro-telemetry .telemetry-bracket {
+  color: var(--mint-luminous);
+}
+
+.skip-intro-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mint-soft);
+  background: rgba(16, 37, 29, 0.75);
+  border: 1px solid rgba(62, 232, 159, 0.35);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all var(--trans-fast);
+}
+
+.skip-intro-btn:hover {
+  background: rgba(36, 77, 46, 0.85);
+  border-color: var(--mint-luminous);
+  box-shadow: 0 0 16px rgba(62, 232, 159, 0.35);
+  color: var(--text-white);
+  transform: translateY(-1px);
+}
+
+.skip-intro-btn kbd {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(138, 232, 196, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--mint-luminous);
+}
+
+.btn-replay-intro {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--mint-soft);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.btn-replay-intro:hover {
+  color: var(--text-white);
+  border-color: var(--mint-luminous);
+  background: rgba(62, 232, 159, 0.12);
+  box-shadow: var(--glow-emerald);
+}
+
+.intro-center-motif {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.5s var(--ease-out-expo), transform 0.6s var(--ease-out-expo);
+}
+
+.intro-emblem-svg {
+  width: 140px;
+  height: 140px;
+  filter: drop-shadow(0 0 28px rgba(62, 232, 159, 0.45));
+}
+
+.intro-refract-ring {
+  transform-origin: 80px 80px;
+  animation: introRefractSpin 14s linear infinite;
+}
+
+@keyframes introRefractSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.intro-title-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.intro-title-line {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: var(--text-white);
+  text-transform: uppercase;
+}
+
+.intro-subtitle-line {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.8px;
+  color: var(--mint-soft);
+  text-transform: uppercase;
+}
+
+/* Kinetic Typography on Hero Headline */
+.hero-headline .kinetic-line {
+  display: block;
+  overflow: hidden;
+}
+
+.hero-headline .kinetic-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.65s var(--ease-out-expo), transform 0.65s var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+
+.hero-headline .kinetic-word.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-headline .kinetic-line.highlight .kinetic-word {
+  color: var(--mint-luminous);
+  background: linear-gradient(135deg, #3ee89f 0%, #8ae8c4 40%, #546f4c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Hero-to-Lab Signal Thread Transition */
+.hero-signal-thread {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.thread-stem {
+  position: relative;
+  width: 2px;
+  height: 48px;
+  background: linear-gradient(180deg, rgba(62, 232, 159, 0.5) 0%, rgba(62, 232, 159, 0.05) 100%);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.thread-pulse {
+  position: absolute;
+  top: -14px;
+  left: -2px;
+  width: 6px;
+  height: 14px;
+  background: var(--mint-luminous);
+  box-shadow: 0 0 10px var(--mint-luminous);
+  border-radius: 3px;
+  animation: threadPulseAnim 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes threadPulseAnim {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translateY(64px); opacity: 0; }
+}
+
+.thread-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  color: var(--mint-soft);
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-overlay {
+    display: none !important;
+  }
+  .hero-headline .kinetic-word {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .thread-pulse {
+    animation: none !important;
+  }
+}
+

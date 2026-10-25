@@ -115,27 +115,45 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - **3D Optical Sculpture & Constellation:** Upgraded hero canvas into an interactive 3D sculpture with elliptical contour ribbons, twin cheek beacon rings, 54 3D photon particles, spring cursor parallax, and magnetic CTA buttons.
     - **14-Gate Signal Integrity Console:** Rendered gauge tracks and summary status badges while preserving `.check strong.pass` / `.check strong.fail` test contracts.
     - **Automated Test Verification:** **94 / 94 Python tests passing** in 7.35s; **17 / 17 browser acceptance tests passing** (including live Gemma 4 explanation); negative timeout regression verified (`TEST_NEGATIVE_TIMEOUT=1`). High-res desktop and mobile screenshots refreshed.
+  - **Milestone M (Active Theory-Inspired Signature Entry Experience: Photon Genesis):** VERIFIED.
+    - **7-Stage Photon Genesis Choreography:**
+      1. *Dark Optical Void (0.0s to 0.6s):* Singularity breathing core at screen center surrounded by ambient micro-dust.
+      2. *Photon Ignition (0.6s to 1.5s):* 135 delicate emerald particles expanding outward radially with spring-damped organic physics.
+      3. *Signal Formation (1.5s to 2.4s):* Particles magnetically steer into bilateral cheek arcs and a central rPPG pulse crest connected by fine proximity filaments ($d < 50\text{px}$).
+      4. *HiperPulse Emblem Manifestation (2.4s to 3.0s):* Particles converge into the HiperPulse emblem with an iridescent refraction ring and glowing title reveal.
+      5. *Dimensional Transition & Dissolve (3.0s to 3.8s):* 3D perspective warp and outward star-speed dissolve into the hero observatory.
+      6. *Kinetic Typography Stagger (3.4s to 4.2s):* Staggered character reveal of "SEE THE SIGNAL. QUESTION THE NOISE." with luminous mint gradient.
+      7. *Hero-to-Lab Signal Thread Transition (3.8s+):* Pulsing transmission thread guiding users from ENTER SIGNAL LAB into the cockpit.
+    - **Performance, Accessibility & Reliability:**
+      - Dedicated SKIP INTRO [ESC] control and `sessionStorage` persistence (plays once per session).
+      - Replay affordance (`↺ Intro` button) in site navigation.
+      - `prefers-reduced-motion` compliance: immediately renders finished hero without intro delay.
+      - Automated test bypass: `navigator.webdriver` immediately bypasses intro so acceptance test suites run at full speed without timeout risk.
+      - Capture safety: Starting camera recording immediately dismisses intro to safeguard frame extraction timing.
+    - **Visual Video & Screencast Artifacts:**
+      - Captured full screencast encoded to MP4 (`reference/hiperpulse-entry-experience.mp4`, 838 KB) and WebM (`reference/hiperpulse-entry-experience.webm`, 1.0 MB) via FFmpeg.
+      - Captured stage-by-stage screenshots: `intro_stage1_singularity.png`, `intro_stage2_ignition.png`, `intro_stage3_signal_formation.png`, `intro_stage4_emblem_manifest.png`, `intro_stage5_dimensional_warp.png`, and `intro_stage6_hero_revealed.png`.
+    - **Automated Test Status:** **94 / 94 Python tests passing**; **17 / 17 browser acceptance tests passing**; negative timeout regression verified.
 
 ## Scope and implementation
 
-Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theory dark emerald frontend with bespoke symbol system and 3D optical sculpture; fixed-patch browser camera/video RGB extraction with $320 \times 240$ spatial binning, dynamic aspect ratio, and readiness HUD; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
+Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theory dark emerald frontend with bespoke symbol system, 3D optical sculpture, and Photon Genesis signature intro experience; fixed-patch browser camera/video RGB extraction with $320 \times 240$ spatial binning, dynamic aspect ratio, and readiness HUD; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
 
 ## Git Status
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, and `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
-- Latest verified audit-polish baseline: `b10c5cbe524fc6c0d310787d5cc92cc396276a36` (Docs sync: `451e17849e7bdf8f237f37477b79d8ce8646b1eb`).
-- Redesigned frontend baseline: `455225b6cdcbb2cfd9fba8e13616b6485f0756f2`.
-- Signal reliability fixes and cinematic symbols staged for commit.
+- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, `8ac073d1741e6facea6df9875e2f1e2e2a748653`, and `0f2b4a530eb6a33ee602fe205b3cb47c1791a826`.
+- Photon Genesis signature intro implemented, tested, and video-captured.
 
 ## Mandatory Release Gates
 
-1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend and real-camera reliability fixes are implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
+1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend, real-camera reliability fixes, and Photon Genesis opening sequence are implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
 2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_APPROVAL_AND_OWNER_AUTHORIZATION`
 3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key is marked for local use only and must be revoked and rotated before any public production deployment.
 
 ## Immediate Next Smallest Task
 
-Hard stop at Owner Visual Review Checkpoint. Present the implemented signal reliability optimizations, bespoke symbol system, 3D optical sculpture, desktop/mobile screenshots, and test verification results to the project owner for their visual approval.
+Hard stop at Owner Visual Review Checkpoint. Present the implemented Photon Genesis opening sequence, MP4/WebM video recording, stage screenshots, desktop/mobile renders, and test verification results to the project owner for their visual approval.
+
 

@@ -469,6 +469,7 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
+  if (window.dismissHiperPulseIntro) window.dismissHiperPulseIntro(true);
   document.body.classList.add('is-capturing');
   if (readinessTimer) { clearInterval(readinessTimer); readinessTimer = null; }
   if ($('readinessHud')) $('readinessHud').style.display = 'none';
@@ -970,6 +971,340 @@ function initHeroCanvas() {
   else draw();
 }
 
+// --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) ---
+function initPhotonGenesisIntro() {
+  const overlay = $('introOverlay');
+  const canvas = $('introCanvas');
+  const skipBtn = $('skipIntroBtn');
+  const replayBtn = $('replayIntroBtn');
+  const centerMotif = $('introCenterMotif');
+  const heroHeadline = $('heroHeadline');
+
+  if (!overlay || !canvas || !canvas.getContext) return;
+
+  const ctx = canvas.getContext('2d');
+  let animId = null;
+  let isDismissed = false;
+  const startTime = performance.now();
+
+  const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const alreadyViewed = Boolean(sessionStorage.getItem('hiperpulse_intro_viewed') === 'true');
+  const isAutomatedTest = Boolean(navigator.webdriver || window.location.search.includes('nointro'));
+
+  function triggerKineticTypography() {
+    if (!heroHeadline) return;
+    const words = heroHeadline.querySelectorAll('.kinetic-word');
+    words.forEach((w, idx) => {
+      w.style.animationDelay = `${idx * 0.09 + 0.08}s`;
+      w.classList.add('revealed');
+    });
+  }
+
+  function dismissIntro(immediate = false) {
+    if (isDismissed) return;
+    isDismissed = true;
+    sessionStorage.setItem('hiperpulse_intro_viewed', 'true');
+
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+
+    if (immediate) {
+      overlay.style.display = 'none';
+      overlay.classList.add('intro-dismissed');
+      triggerKineticTypography();
+      return;
+    }
+
+    overlay.classList.add('intro-dismissed');
+    triggerKineticTypography();
+    setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 800);
+  }
+
+  // Safety fallback: ensure headline reveals by 3.6s even if transition is delayed
+  setTimeout(triggerKineticTypography, 3600);
+
+  window.dismissHiperPulseIntro = dismissIntro;
+
+  if (prefersReduced || alreadyViewed || isAutomatedTest) {
+    dismissIntro(true);
+    if (replayBtn) {
+      replayBtn.addEventListener('click', () => {
+        sessionStorage.removeItem('hiperpulse_intro_viewed');
+        window.location.reload();
+      });
+    }
+    return;
+  }
+
+  if (skipBtn) {
+    skipBtn.addEventListener('click', e => {
+      e.preventDefault();
+      dismissIntro(false);
+    });
+  }
+
+  if (replayBtn) {
+    replayBtn.addEventListener('click', () => {
+      sessionStorage.removeItem('hiperpulse_intro_viewed');
+      window.location.reload();
+    });
+  }
+
+  window.addEventListener('keydown', e => {
+    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
+      e.preventDefault();
+      dismissIntro(false);
+    }
+  });
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let w = 0, h = 0;
+
+  function resize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+  }
+
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
+
+  const mouse = { x: w / 2, y: h / 2, moved: false };
+  window.addEventListener('pointermove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.moved = true;
+  }, { passive: true });
+
+  const TOTAL_PARTICLES = 135;
+  const particles = [];
+  const cx = w / 2;
+  const cy = h / 2;
+
+  for (let i = 0; i < TOTAL_PARTICLES; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 180 + Math.random() * 260;
+    const size = Math.random() * 1.8 + 1.1;
+
+    let targetType = 'crest';
+    let tx = cx, ty = cy;
+    if (i < 45) {
+      targetType = 'cheekL';
+      const arcFrac = i / 44;
+      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+      tx = cx - 110 + Math.cos(arcAngle) * 35;
+      ty = cy + Math.sin(arcAngle) * 75;
+    } else if (i < 90) {
+      targetType = 'cheekR';
+      const arcFrac = (i - 45) / 44;
+      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+      tx = cx + 110 - Math.cos(arcAngle) * 35;
+      ty = cy + Math.sin(arcAngle) * 75;
+    } else {
+      targetType = 'crest';
+      const waveFrac = (i - 90) / 44;
+      const waveX = (waveFrac - 0.5) * 160;
+      const u = waveFrac * 4 * Math.PI;
+      const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
+                    + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
+      tx = cx + waveX;
+      ty = cy + waveY;
+    }
+
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size,
+      tx,
+      ty,
+      targetType,
+      alpha: 1.0
+    });
+  }
+
+  const dust = [];
+  for (let d = 0; d < 28; d++) {
+    dust.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 16,
+      vy: (Math.random() - 0.5) * 16,
+      size: Math.random() * 1.2 + 0.4
+    });
+  }
+
+  let lastFrameTime = performance.now();
+
+  function renderIntroFrame(now) {
+    if (isDismissed) return;
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = now;
+    const elapsed = (now - startTime) / 1000;
+
+    const curCx = w / 2;
+    const curCy = h / 2;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Stage 1: Optical Singularity Void (0.0s to 0.6s)
+    if (elapsed < 0.6) {
+      const breath = Math.sin(elapsed * 12) * 3.5;
+      const coreGrad = ctx.createRadialGradient(curCx, curCy, 0, curCx, curCy, 16 + breath);
+      coreGrad.addColorStop(0, '#eef2ed');
+      coreGrad.addColorStop(0.25, '#3ee89f');
+      coreGrad.addColorStop(0.65, 'rgba(62, 232, 159, 0.45)');
+      coreGrad.addColorStop(1, 'rgba(3, 9, 7, 0)');
+
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(curCx, curCy, 18 + breath, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(curCx, curCy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Ambient micro-dust
+    ctx.fillStyle = 'rgba(138, 232, 196, 0.22)';
+    for (const dp of dust) {
+      dp.x += dp.vx * dt;
+      dp.y += dp.vy * dt;
+      if (dp.x < 0) dp.x = w;
+      if (dp.x > w) dp.x = 0;
+      if (dp.y < 0) dp.y = h;
+      if (dp.y > h) dp.y = 0;
+      ctx.beginPath();
+      ctx.arc(dp.x, dp.y, dp.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Stages 2 through 5: Particles Active (0.6s onwards)
+    if (elapsed >= 0.6) {
+      const stageElapsed = elapsed - 0.6;
+      const isIgnition = stageElapsed < 0.9;
+      const isFormation = stageElapsed >= 0.9 && stageElapsed < 1.8;
+      const isEmblem = stageElapsed >= 1.8 && stageElapsed < 2.4;
+      const isDissolve = stageElapsed >= 2.4;
+
+      if (centerMotif) {
+        if (stageElapsed < 1.8) {
+          centerMotif.style.opacity = '0';
+          centerMotif.style.transform = 'scale(0.85)';
+        } else if (isEmblem) {
+          const embProgress = Math.min(1.0, (stageElapsed - 1.8) / 0.4);
+          centerMotif.style.opacity = String(embProgress);
+          centerMotif.style.transform = `scale(${0.85 + embProgress * 0.15})`;
+        } else if (isDissolve) {
+          const dissProgress = (stageElapsed - 2.4) / 0.8;
+          centerMotif.style.opacity = String(Math.max(0, 1.0 - dissProgress * 1.5));
+          centerMotif.style.transform = `scale(${1.0 + dissProgress * 0.9})`;
+        }
+      }
+
+      // Optical filament lines between particles during Stage 3 (Formation) & Stage 4
+      if (stageElapsed >= 0.9 && stageElapsed < 2.5) {
+        const lineAlpha = stageElapsed < 1.4
+          ? (stageElapsed - 0.9) / 0.5
+          : stageElapsed > 2.2
+            ? (2.5 - stageElapsed) / 0.3
+            : 1.0;
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < TOTAL_PARTICLES; i += 2) {
+          for (let j = i + 1; j < TOTAL_PARTICLES; j += 3) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < 2500) {
+              const d = Math.sqrt(distSq);
+              ctx.strokeStyle = `rgba(62, 232, 159, ${(1 - d / 50) * 0.35 * lineAlpha})`;
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      // Particle physics & rendering
+      for (let i = 0; i < TOTAL_PARTICLES; i++) {
+        const p = particles[i];
+
+        if (isIgnition) {
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= Math.pow(0.92, dt * 60);
+          p.vy *= Math.pow(0.92, dt * 60);
+        } else if (isFormation || isEmblem) {
+          const pullK = isFormation ? 0.08 : 0.14;
+          const dx = p.tx - p.x;
+          const dy = p.ty - p.y;
+          p.vx += dx * pullK;
+          p.vy += dy * pullK;
+          p.vx *= 0.82;
+          p.vy *= 0.82;
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (mouse.moved) {
+            const mdx = p.x - mouse.x;
+            const mdy = p.y - mouse.y;
+            const mDistSq = mdx * mdx + mdy * mdy;
+            if (mDistSq < 10000 && mDistSq > 1) {
+              const mDist = Math.sqrt(mDistSq);
+              const repel = (1 - mDist / 100) * 4;
+              p.x += (mdx / mDist) * repel;
+              p.y += (mdy / mDist) * repel;
+            }
+          }
+        } else if (isDissolve) {
+          const dissT = stageElapsed - 2.4;
+          const outwardX = (p.x - curCx) || (Math.random() - 0.5);
+          const outwardY = (p.y - curCy) || (Math.random() - 0.5);
+          const dist = Math.sqrt(outwardX * outwardX + outwardY * outwardY) || 1;
+          const warpSpeed = 320 + dissT * 950;
+          p.x += (outwardX / dist) * warpSpeed * dt;
+          p.y += (outwardY / dist) * warpSpeed * dt;
+          p.alpha = Math.max(0, 1 - dissT / 0.8);
+        }
+
+        ctx.save();
+        ctx.fillStyle = p.targetType === 'crest'
+          ? `rgba(138, 232, 196, ${p.alpha * 0.95})`
+          : `rgba(62, 232, 159, ${p.alpha * 0.85})`;
+        ctx.shadowColor = 'rgba(62, 232, 159, 0.6)';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    if (elapsed >= 3.8 && !isDismissed) {
+      dismissIntro(false);
+      return;
+    }
+
+    animId = requestAnimationFrame(renderIntroFrame);
+  }
+
+  animId = requestAnimationFrame(renderIntroFrame);
+}
+
 // Magnetic Button Interaction
 function initMagneticButtons() {
   const btns = document.querySelectorAll('.magnetic-btn');
@@ -987,6 +1322,7 @@ function initMagneticButtons() {
 }
 
 function initApp() {
+  initPhotonGenesisIntro();
   initHeroCanvas();
   initMagneticButtons();
 }
@@ -996,4 +1332,5 @@ if (document.readyState === 'loading') {
 } else {
   initApp();
 }
+
 

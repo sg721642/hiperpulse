@@ -14,6 +14,45 @@
 </head>
 <body>
 
+  <!-- Signature Intro Experience: Photon Genesis (Active Theory-Inspired) -->
+  <aside id="introOverlay" class="intro-overlay" role="dialog" aria-modal="true" aria-label="HiperPulse Opening Sequence">
+    <canvas id="introCanvas" class="intro-canvas"></canvas>
+    <div class="intro-hud">
+      <div class="intro-telemetry">
+        <span class="telemetry-bracket">[</span>
+        <span class="telemetry-mono">OBSERVATORY CALIBRATION // 0.001λ</span>
+        <span class="telemetry-bracket">]</span>
+      </div>
+      <button id="skipIntroBtn" class="skip-intro-btn" aria-label="Skip opening sequence">
+        <span>SKIP INTRO</span>
+        <kbd>ESC</kbd>
+      </button>
+    </div>
+    <div class="intro-center-motif" id="introCenterMotif">
+      <svg class="intro-emblem-svg" viewBox="0 0 160 160" fill="none" aria-hidden="true">
+        <circle class="intro-refract-ring" cx="80" cy="80" r="68" stroke="url(#introRingGrad)" stroke-width="2.5" stroke-dasharray="4 4"/>
+        <circle class="intro-pulse-core" cx="80" cy="80" r="42" stroke="rgba(62, 232, 159, 0.4)" stroke-width="1.5"/>
+        <path class="intro-cheek-left" d="M38 56 C28 70, 28 90, 38 104" stroke="#3ee89f" stroke-width="3" stroke-linecap="round"/>
+        <path class="intro-cheek-right" d="M122 56 C132 70, 132 90, 122 104" stroke="#3ee89f" stroke-width="3" stroke-linecap="round"/>
+        <path class="intro-wave-crest" d="M52 80 Q66 80 72 60 T80 100 T88 50 T96 90 T108 80" stroke="#8ae8c4" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="38" cy="80" r="3.5" fill="#3ee89f"/>
+        <circle cx="122" cy="80" r="3.5" fill="#3ee89f"/>
+        <defs>
+          <linearGradient id="introRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3ee89f" stop-opacity="0.95"/>
+            <stop offset="35%" stop-color="#8ae8c4" stop-opacity="0.5"/>
+            <stop offset="70%" stop-color="#f1cc8b" stop-opacity="0.75"/>
+            <stop offset="100%" stop-color="#3ee89f" stop-opacity="0.95"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="intro-title-reveal" id="introTitleReveal">
+        <span class="intro-title-line">HIPERPULSE</span>
+        <span class="intro-subtitle-line">NEURO-OPTICAL SIGNAL LAB</span>
+      </div>
+    </div>
+  </aside>
+
   <!-- Top Sticky Navigation Bar -->
   <nav class="site-nav">
     <div class="nav-container">
@@ -37,6 +76,7 @@
       </ul>
       <div class="nav-actions">
         <span class="badge">GREEN v1.1 // EXPERIMENTAL</span>
+        <button id="replayIntroBtn" class="btn-replay-intro" title="Replay Opening Sequence" aria-label="Replay opening sequence">↺ Intro</button>
         <a href="#lab" class="btn-nav-enter magnetic-btn">Launch Cockpit ↓</a>
       </div>
     </div>
@@ -49,9 +89,9 @@
     <div class="hero-content">
       <div class="hero-editorial">
         <p class="hero-eyebrow">CAMERA SIGNAL OBSERVATORY</p>
-        <h1 class="hero-headline">
-          SEE THE SIGNAL.
-          <span class="highlight">QUESTION THE NOISE.</span>
+        <h1 class="hero-headline" id="heroHeadline">
+          <span class="kinetic-line"><span class="kinetic-word">SEE</span> <span class="kinetic-word">THE</span> <span class="kinetic-word">SIGNAL.</span></span>
+          <span class="kinetic-line highlight"><span class="kinetic-word">QUESTION</span> <span class="kinetic-word">THE</span> <span class="kinetic-word">NOISE.</span></span>
         </h1>
         <p class="hero-summary">
           An experimental camera-based pulse signal lab built around heuristic quality gates, honest withholding, and reproducible evidence.
@@ -62,6 +102,12 @@
         <div class="hero-actions">
           <a href="#lab" class="btn-primary-glow magnetic-btn">ENTER SIGNAL LAB</a>
           <a href="#method" class="btn-secondary-ghost magnetic-btn">EXPLORE THE METHOD</a>
+        </div>
+        <div class="hero-signal-thread" aria-hidden="true">
+          <div class="thread-stem">
+            <span class="thread-pulse"></span>
+          </div>
+          <span class="thread-label">CALIBRATED ENTRY // TRANSMISSION STREAM</span>
         </div>
       </div>
 

@@ -110,6 +110,30 @@ Prepared 25 October 2026. This file separates observed software checks from task
   - 17 / 17 Browser Acceptance tests passing in headless Brave via CDP (including live Gemma 4).
   - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
 
+## Milestone M: Active Theory-Inspired Signature Entry Experience (Photon Genesis) & Kinetic Typography
+
+- **Date:** 25 October 2026
+- **Architecture & Implementation:**
+  - Implemented the 7-stage Photon Genesis opening sequence on `#introCanvas` / `#introOverlay`.
+  - Stages: (1) Optical Singularity Void; (2) Photon Ignition (135 particles); (3) Signal Formation (bilateral cheek arcs + rPPG pulse crest); (4) HiperPulse Emblem Manifestation & Refraction Ring; (5) Dimensional Warp & Dissolve; (6) Kinetic Typography Stagger ("SEE THE SIGNAL. QUESTION THE NOISE."); (7) Hero-to-Lab Signal Thread Transition.
+  - Controls & Usability: Keyboard-operable SKIP INTRO [ESC] button, `sessionStorage` persistence (plays once per session), `↺ Intro` replay affordance in navigation, instant bypass for automated test runners (`navigator.webdriver`), and safety guard dismissing intro when recording starts.
+- **Visual Capture & Video Screencast Evidence:**
+  - MP4 video recording: `reference/hiperpulse-entry-experience.mp4` (838 KB, H.264 24 fps)
+  - WebM video recording: `reference/hiperpulse-entry-experience.webm` (1.0 MB, VP9 24 fps)
+  - Stage-by-stage screenshots:
+    - `reference/intro_stage1_singularity.png` (Stage 1 Singularity Void, 0.3s)
+    - `reference/intro_stage2_ignition.png` (Stage 2 Photon Ignition, 1.0s)
+    - `reference/intro_stage3_signal_formation.png` (Stage 3 Signal Formation, 1.9s)
+    - `reference/intro_stage4_emblem_manifest.png` (Stage 4 Emblem Manifestation, 2.6s)
+    - `reference/intro_stage5_dimensional_warp.png` (Stage 5 Dimensional Transition, 3.2s)
+    - `reference/intro_stage6_hero_revealed.png` (Stage 6 Hero Revealed with Kinetic Typography, 4.2s)
+  - Desktop & Mobile full-page screenshots refreshed.
+- **Automated Verification:**
+  - 94 / 94 Python tests passing in 7.33s (`tests/`).
+  - 0 JavaScript syntax errors (`web/app.js`, `scripts/test_browser_acceptance.js`).
+  - 17 / 17 Browser Acceptance tests passing via Brave CDP runner.
+  - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
+
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
 - **Date:** 25 October 2026

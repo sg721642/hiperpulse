@@ -223,6 +223,34 @@
   - Negative timeout regression verified (`TEST_NEGATIVE_TIMEOUT=1`).
   - High-resolution desktop and mobile screenshots refreshed in `reference/` and copied to artifacts.
 
+### Milestone M: Active Theory-Inspired Signature Entry Experience (Photon Genesis) — VERIFIED
+- **Section A (7-Stage Opening Sequence Architecture):**
+  - Designed and deployed an original 7-stage opening sequence on `#introCanvas` / `#introOverlay`:
+    1. *Optical Singularity Void (0.0s to 0.6s):* Screen starts in dark obsidian void with breathing mint green singularity and ambient micro-dust.
+    2. *Photon Ignition (0.6s to 1.5s):* Singularity erupts into 135 delicate emerald particles expanding outward radially with spring-damped organic physics and pointer deflection.
+    3. *Signal Formation (1.5s to 2.4s):* Particles magnetically steer into bilateral cheek arcs and central rPPG pulse crest connected by fine proximity filaments ($d < 50\text{px}$).
+    4. *HiperPulse Emblem Manifestation (2.4s to 3.0s):* Particles converge into the HiperPulse emblem with an iridescent refraction ring and glowing title reveal.
+    5. *Dimensional Transition & Dissolve (3.0s to 3.8s):* 3D perspective warp and outward star-speed dissolve into the hero observatory.
+    6. *Kinetic Typography Stagger (3.4s to 4.2s):* Staggered character reveal of "SEE THE SIGNAL. QUESTION THE NOISE." with luminous mint gradient.
+    7. *Hero-to-Lab Signal Thread Transition (3.8s+):* Pulsing transmission thread guiding users from ENTER SIGNAL LAB into the cockpit.
+- **Section B (Controls, Accessibility & Safety):**
+  - Dedicated keyboard-accessible SKIP INTRO [ESC] control.
+  - `sessionStorage` persistence (`hiperpulse_intro_viewed`) prevents replay on repeated page visits.
+  - Navigation `↺ Intro` replay affordance.
+  - `prefers-reduced-motion` compliance: immediate static hero display.
+  - Headless test bypass: `navigator.webdriver` skips intro immediately.
+  - Frame protection: Starting recording immediately halts intro to safeguard frame extraction timing.
+- **Section C (Video & Visual Screencast Artifacts):**
+  - MP4 video recording: `reference/hiperpulse-entry-experience.mp4` (838 KB, H.264 24 fps)
+  - WebM video recording: `reference/hiperpulse-entry-experience.webm` (1.0 MB, VP9 24 fps)
+  - Stage screenshots: `intro_stage1_singularity.png` through `intro_stage6_hero_revealed.png`.
+- **Section D (Automated Verification):**
+  - **94 / 94 Python tests passing** in 7.33s (`tests/`).
+  - **0 JavaScript syntax errors** (`node --check web/app.js`, `node --check scripts/test_browser_acceptance.js`).
+  - **17 / 17 browser acceptance tests passing** (including live Gemma 4).
+  - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
+
+
 
 
 

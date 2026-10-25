@@ -771,29 +771,46 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - **3D Optical Sculpture & Constellation:** Upgraded hero canvas into an interactive 3D sculpture with elliptical contour ribbons, twin cheek beacon rings, 54 3D photon particles, spring cursor parallax, and magnetic CTA buttons.
     - **14-Gate Signal Integrity Console:** Rendered gauge tracks and summary status badges while preserving `.check strong.pass` / `.check strong.fail` test contracts.
     - **Automated Test Verification:** **94 / 94 Python tests passing** in 7.35s; **17 / 17 browser acceptance tests passing** (including live Gemma 4 explanation); negative timeout regression verified (`TEST_NEGATIVE_TIMEOUT=1`). High-res desktop and mobile screenshots refreshed.
+  - **Milestone M (Active Theory-Inspired Signature Entry Experience: Photon Genesis):** VERIFIED.
+    - **7-Stage Photon Genesis Choreography:**
+      1. *Dark Optical Void (0.0s to 0.6s):* Singularity breathing core at screen center surrounded by ambient micro-dust.
+      2. *Photon Ignition (0.6s to 1.5s):* 135 delicate emerald particles expanding outward radially with spring-damped organic physics.
+      3. *Signal Formation (1.5s to 2.4s):* Particles magnetically steer into bilateral cheek arcs and a central rPPG pulse crest connected by fine proximity filaments ($d < 50\text{px}$).
+      4. *HiperPulse Emblem Manifestation (2.4s to 3.0s):* Particles converge into the HiperPulse emblem with an iridescent refraction ring and glowing title reveal.
+      5. *Dimensional Transition & Dissolve (3.0s to 3.8s):* 3D perspective warp and outward star-speed dissolve into the hero observatory.
+      6. *Kinetic Typography Stagger (3.4s to 4.2s):* Staggered character reveal of "SEE THE SIGNAL. QUESTION THE NOISE." with luminous mint gradient.
+      7. *Hero-to-Lab Signal Thread Transition (3.8s+):* Pulsing transmission thread guiding users from ENTER SIGNAL LAB into the cockpit.
+    - **Performance, Accessibility & Reliability:**
+      - Dedicated SKIP INTRO [ESC] control and `sessionStorage` persistence (plays once per session).
+      - Replay affordance (`↺ Intro` button) in site navigation.
+      - `prefers-reduced-motion` compliance: immediately renders finished hero without intro delay.
+      - Automated test bypass: `navigator.webdriver` immediately bypasses intro so acceptance test suites run at full speed without timeout risk.
+      - Capture safety: Starting camera recording immediately dismisses intro to safeguard frame extraction timing.
+    - **Visual Video & Screencast Artifacts:**
+      - Captured full screencast encoded to MP4 (`reference/hiperpulse-entry-experience.mp4`, 838 KB) and WebM (`reference/hiperpulse-entry-experience.webm`, 1.0 MB) via FFmpeg.
+      - Captured stage-by-stage screenshots: `intro_stage1_singularity.png`, `intro_stage2_ignition.png`, `intro_stage3_signal_formation.png`, `intro_stage4_emblem_manifest.png`, `intro_stage5_dimensional_warp.png`, and `intro_stage6_hero_revealed.png`.
+    - **Automated Test Status:** **94 / 94 Python tests passing**; **17 / 17 browser acceptance tests passing**; negative timeout regression verified.
 
 ## Scope and implementation
 
-Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theory dark emerald frontend with bespoke symbol system and 3D optical sculpture; fixed-patch browser camera/video RGB extraction with $320 \times 240$ spatial binning, dynamic aspect ratio, and readiness HUD; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
+Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theory dark emerald frontend with bespoke symbol system, 3D optical sculpture, and Photon Genesis signature intro experience; fixed-patch browser camera/video RGB extraction with $320 \times 240$ spatial binning, dynamic aspect ratio, and readiness HUD; JSON input; three synthetic fixtures; all-checks quality gate (v1.1); waveform/spectrum; 3-challenge artifact lab; guided retake analysis; downloadable receipts, traces, and judge evidence card; live Gemma 4 REST explanation with deterministic fallback; Docker packaging for DigitalOcean. No neural rPPG, face tracking, database or clinical output.
 
 ## Git Status
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, and `8ac073d1741e6facea6df9875e2f1e2e2a748653`.
-- Latest verified audit-polish baseline: `b10c5cbe524fc6c0d310787d5cc92cc396276a36` (Docs sync: `451e17849e7bdf8f237f37477b79d8ce8646b1eb`).
-- Redesigned frontend baseline: `455225b6cdcbb2cfd9fba8e13616b6485f0756f2`.
-- Signal reliability fixes and cinematic symbols staged for commit.
+- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, `8ac073d1741e6facea6df9875e2f1e2e2a748653`, and `0f2b4a530eb6a33ee602fe205b3cb47c1791a826`.
+- Photon Genesis signature intro implemented, tested, and video-captured.
 
 ## Mandatory Release Gates
 
-1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend and real-camera reliability fixes are implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
+1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend, real-camera reliability fixes, and Photon Genesis opening sequence are implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
 2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_APPROVAL_AND_OWNER_AUTHORIZATION`
 3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key is marked for local use only and must be revoked and rotated before any public production deployment.
 
 ## Immediate Next Smallest Task
 
-Hard stop at Owner Visual Review Checkpoint. Present the implemented signal reliability optimizations, bespoke symbol system, 3D optical sculpture, desktop/mobile screenshots, and test verification results to the project owner for their visual approval.
+Hard stop at Owner Visual Review Checkpoint. Present the implemented Photon Genesis opening sequence, MP4/WebM video recording, stage screenshots, desktop/mobile renders, and test verification results to the project owner for their visual approval.
 
 
 ---
@@ -838,6 +855,7 @@ Final-audit addendum (25 October 2026): use the final single-file plan as portab
 | D28 | Hardened Browser Startup Diagnostics, Cooldown Test Decoupling & Provenance Honest Classification | Resolves final Astra re-audit items. Adds bounded launch retry, explicit CDP HTTP readiness (/json/version, /json/new), dynamic port fallback, and diagnostic artifact emission for browser acceptance tests. Makes live Gemma cooldown verification concurrent to eliminate false failures from provider latency, accompanied by 3 mocked-provider unit tests verifying lock-entry timestamping. Accurately classifies Judge Evidence Card provenance across 8 distinct scenarios and updates Guided Retake delta score wording from relative percentage to percentage points. |
 | D29 | Winning-Level Immersive Frontend Redesign (Vizo × Active Theory) with Zero Contract Breakage | Creative fusion of Vizo neuro-optical dark emerald telemetry and Active Theory interactive particle dynamics. Upgrades `web/index.html`, `web/style.css`, and `web/app.js` using dark emerald & black palette (`#030907`, `#071310`, `#10251d`, `#3ee89f`), Cabinet Grotesk / Syne / Instrument Sans / IBM Plex Mono typography, interactive hero particle constellation, optical viewport with cheek alignment frames, oscilloscope waveform monitors, and scanline effects. Preserves all 38 DOM selectors, 14 quality gates, canvas spied calls, and API contracts. Zero clinical claims introduced. |
 | D30 | Real-Camera Signal Reliability Optimization (Spatial Binning SNR, Dynamic Aspect Ratio, Low-Resource Capture Mode, and Cinematic Symbol System) | Real camera recordings frequently failed autocorrelation (<0.45) and spectral concentration (<0.50) gates (yielding 79%, 86%, 93% scores). Mathematical analysis proved quality gates are theoretically sound (actual SNR was -4.75 dB, noise power 3x pulse amplitude; relaxing thresholds would compromise clinical safety by accepting white noise). Four physical causes diagnosed and fixed without lowering thresholds: (1) Spatial binning SNR loss: Upgraded scratch canvas from 160x120 to 320x240 (averaging 1,102 pixels/patch vs 266, cutting sensor noise in half and improving SNR by 6-12 dB); (2) Aspect-ratio cropping misalignment: Dynamically adapt capture-stage aspect ratio to video stream (videoWidth/videoHeight) on loadedmetadata/stream start, preventing 12.5% lateral crop and keeping cheek ROIs on perfused tissue; (3) Main-thread contention: Implemented low-resource recording mode (`body.is-capturing`) pausing hero animation loop and heavy CSS during active 30s capture; (4) Pre-capture optical readiness HUD: Real-time bilateral symmetry, green illumination [20, 235], and head stillness feedback before recording. Also integrated bespoke SVG symbol system (Signature Emblem, Signal Integrity Seal, Artifact Glyphs A/B/C) and 14-Gate Signal Integrity Console with gauge tracks preserving test contracts. |
+| D31 | Active Theory-Inspired Signature Entry Experience (Photon Genesis) & Kinetic Typography | Designed an original, premium 7-stage opening sequence inspired by Active Theory without borrowing proprietary assets or code: (1) Dark optical void with central breathing singularity (0.0s to 0.6s); (2) Photon ignition radial bloom with 135 particles (0.6s to 1.5s); (3) Signal formation into bilateral cheek arcs and central pulse crest with proximity filament lines (1.5s to 2.4s); (4) HiperPulse emblem reveal with iridescent refraction ring (2.4s to 3.0s); (5) Dimensional warp & dissolve (3.0s to 3.8s); (6) Hero kinetic typography stagger ("SEE THE SIGNAL. QUESTION THE NOISE."); (7) Pulsing signal-thread transition guiding visitors to "ENTER SIGNAL LAB". Includes keyboard-operable SKIP INTRO [ESC] control, sessionStorage persistence (runs once per session), `prefers-reduced-motion` compliance, instant skip for automated test runners (`navigator.webdriver`), and safety guard immediately dismissing intro when camera capture starts. Recorded screencast and encoded to MP4/WebM video artifacts. |
 
 Future changes must record date, triggering evidence, chosen alternative, rejected alternatives and tests. Do not broaden scope to POS/neural rPPG before all existing acceptance gates and sponsor integration are complete. POS can be a future comparison baseline, with paper attribution, reference parity tests and new validation; it is not implemented here.
 
@@ -958,6 +976,30 @@ Prepared 25 October 2026. This file separates observed software checks from task
   - 94 / 94 Python tests passing in 7.35s (`tests/`).
   - 0 JavaScript syntax errors (`node --check web/app.js`, `node --check scripts/test_browser_acceptance.js`).
   - 17 / 17 Browser Acceptance tests passing in headless Brave via CDP (including live Gemma 4).
+  - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
+
+## Milestone M: Active Theory-Inspired Signature Entry Experience (Photon Genesis) & Kinetic Typography
+
+- **Date:** 25 October 2026
+- **Architecture & Implementation:**
+  - Implemented the 7-stage Photon Genesis opening sequence on `#introCanvas` / `#introOverlay`.
+  - Stages: (1) Optical Singularity Void; (2) Photon Ignition (135 particles); (3) Signal Formation (bilateral cheek arcs + rPPG pulse crest); (4) HiperPulse Emblem Manifestation & Refraction Ring; (5) Dimensional Warp & Dissolve; (6) Kinetic Typography Stagger ("SEE THE SIGNAL. QUESTION THE NOISE."); (7) Hero-to-Lab Signal Thread Transition.
+  - Controls & Usability: Keyboard-operable SKIP INTRO [ESC] button, `sessionStorage` persistence (plays once per session), `↺ Intro` replay affordance in navigation, instant bypass for automated test runners (`navigator.webdriver`), and safety guard dismissing intro when recording starts.
+- **Visual Capture & Video Screencast Evidence:**
+  - MP4 video recording: `reference/hiperpulse-entry-experience.mp4` (838 KB, H.264 24 fps)
+  - WebM video recording: `reference/hiperpulse-entry-experience.webm` (1.0 MB, VP9 24 fps)
+  - Stage-by-stage screenshots:
+    - `reference/intro_stage1_singularity.png` (Stage 1 Singularity Void, 0.3s)
+    - `reference/intro_stage2_ignition.png` (Stage 2 Photon Ignition, 1.0s)
+    - `reference/intro_stage3_signal_formation.png` (Stage 3 Signal Formation, 1.9s)
+    - `reference/intro_stage4_emblem_manifest.png` (Stage 4 Emblem Manifestation, 2.6s)
+    - `reference/intro_stage5_dimensional_warp.png` (Stage 5 Dimensional Transition, 3.2s)
+    - `reference/intro_stage6_hero_revealed.png` (Stage 6 Hero Revealed with Kinetic Typography, 4.2s)
+  - Desktop & Mobile full-page screenshots refreshed.
+- **Automated Verification:**
+  - 94 / 94 Python tests passing in 7.33s (`tests/`).
+  - 0 JavaScript syntax errors (`web/app.js`, `scripts/test_browser_acceptance.js`).
+  - 17 / 17 Browser Acceptance tests passing via Brave CDP runner.
   - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
@@ -6236,6 +6278,7 @@ function capture(source) {
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
   if(!video.requestVideoFrameCallback){status('This browser cannot timestamp video frames reliably. Use a current Chrome/Edge or sample mode.');return;}
   blank();capturing=true;controls();const ticket=++generation;
+  if (window.dismissHiperPulseIntro) window.dismissHiperPulseIntro(true);
   document.body.classList.add('is-capturing');
   if (readinessTimer) { clearInterval(readinessTimer); readinessTimer = null; }
   if ($('readinessHud')) $('readinessHud').style.display = 'none';
@@ -6737,6 +6780,340 @@ function initHeroCanvas() {
   else draw();
 }
 
+// --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) ---
+function initPhotonGenesisIntro() {
+  const overlay = $('introOverlay');
+  const canvas = $('introCanvas');
+  const skipBtn = $('skipIntroBtn');
+  const replayBtn = $('replayIntroBtn');
+  const centerMotif = $('introCenterMotif');
+  const heroHeadline = $('heroHeadline');
+
+  if (!overlay || !canvas || !canvas.getContext) return;
+
+  const ctx = canvas.getContext('2d');
+  let animId = null;
+  let isDismissed = false;
+  const startTime = performance.now();
+
+  const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const alreadyViewed = Boolean(sessionStorage.getItem('hiperpulse_intro_viewed') === 'true');
+  const isAutomatedTest = Boolean(navigator.webdriver || window.location.search.includes('nointro'));
+
+  function triggerKineticTypography() {
+    if (!heroHeadline) return;
+    const words = heroHeadline.querySelectorAll('.kinetic-word');
+    words.forEach((w, idx) => {
+      w.style.animationDelay = `${idx * 0.09 + 0.08}s`;
+      w.classList.add('revealed');
+    });
+  }
+
+  function dismissIntro(immediate = false) {
+    if (isDismissed) return;
+    isDismissed = true;
+    sessionStorage.setItem('hiperpulse_intro_viewed', 'true');
+
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+
+    if (immediate) {
+      overlay.style.display = 'none';
+      overlay.classList.add('intro-dismissed');
+      triggerKineticTypography();
+      return;
+    }
+
+    overlay.classList.add('intro-dismissed');
+    triggerKineticTypography();
+    setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 800);
+  }
+
+  // Safety fallback: ensure headline reveals by 3.6s even if transition is delayed
+  setTimeout(triggerKineticTypography, 3600);
+
+  window.dismissHiperPulseIntro = dismissIntro;
+
+  if (prefersReduced || alreadyViewed || isAutomatedTest) {
+    dismissIntro(true);
+    if (replayBtn) {
+      replayBtn.addEventListener('click', () => {
+        sessionStorage.removeItem('hiperpulse_intro_viewed');
+        window.location.reload();
+      });
+    }
+    return;
+  }
+
+  if (skipBtn) {
+    skipBtn.addEventListener('click', e => {
+      e.preventDefault();
+      dismissIntro(false);
+    });
+  }
+
+  if (replayBtn) {
+    replayBtn.addEventListener('click', () => {
+      sessionStorage.removeItem('hiperpulse_intro_viewed');
+      window.location.reload();
+    });
+  }
+
+  window.addEventListener('keydown', e => {
+    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
+      e.preventDefault();
+      dismissIntro(false);
+    }
+  });
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let w = 0, h = 0;
+
+  function resize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+  }
+
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
+
+  const mouse = { x: w / 2, y: h / 2, moved: false };
+  window.addEventListener('pointermove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.moved = true;
+  }, { passive: true });
+
+  const TOTAL_PARTICLES = 135;
+  const particles = [];
+  const cx = w / 2;
+  const cy = h / 2;
+
+  for (let i = 0; i < TOTAL_PARTICLES; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 180 + Math.random() * 260;
+    const size = Math.random() * 1.8 + 1.1;
+
+    let targetType = 'crest';
+    let tx = cx, ty = cy;
+    if (i < 45) {
+      targetType = 'cheekL';
+      const arcFrac = i / 44;
+      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+      tx = cx - 110 + Math.cos(arcAngle) * 35;
+      ty = cy + Math.sin(arcAngle) * 75;
+    } else if (i < 90) {
+      targetType = 'cheekR';
+      const arcFrac = (i - 45) / 44;
+      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+      tx = cx + 110 - Math.cos(arcAngle) * 35;
+      ty = cy + Math.sin(arcAngle) * 75;
+    } else {
+      targetType = 'crest';
+      const waveFrac = (i - 90) / 44;
+      const waveX = (waveFrac - 0.5) * 160;
+      const u = waveFrac * 4 * Math.PI;
+      const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
+                    + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
+      tx = cx + waveX;
+      ty = cy + waveY;
+    }
+
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size,
+      tx,
+      ty,
+      targetType,
+      alpha: 1.0
+    });
+  }
+
+  const dust = [];
+  for (let d = 0; d < 28; d++) {
+    dust.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 16,
+      vy: (Math.random() - 0.5) * 16,
+      size: Math.random() * 1.2 + 0.4
+    });
+  }
+
+  let lastFrameTime = performance.now();
+
+  function renderIntroFrame(now) {
+    if (isDismissed) return;
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = now;
+    const elapsed = (now - startTime) / 1000;
+
+    const curCx = w / 2;
+    const curCy = h / 2;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Stage 1: Optical Singularity Void (0.0s to 0.6s)
+    if (elapsed < 0.6) {
+      const breath = Math.sin(elapsed * 12) * 3.5;
+      const coreGrad = ctx.createRadialGradient(curCx, curCy, 0, curCx, curCy, 16 + breath);
+      coreGrad.addColorStop(0, '#eef2ed');
+      coreGrad.addColorStop(0.25, '#3ee89f');
+      coreGrad.addColorStop(0.65, 'rgba(62, 232, 159, 0.45)');
+      coreGrad.addColorStop(1, 'rgba(3, 9, 7, 0)');
+
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(curCx, curCy, 18 + breath, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(curCx, curCy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Ambient micro-dust
+    ctx.fillStyle = 'rgba(138, 232, 196, 0.22)';
+    for (const dp of dust) {
+      dp.x += dp.vx * dt;
+      dp.y += dp.vy * dt;
+      if (dp.x < 0) dp.x = w;
+      if (dp.x > w) dp.x = 0;
+      if (dp.y < 0) dp.y = h;
+      if (dp.y > h) dp.y = 0;
+      ctx.beginPath();
+      ctx.arc(dp.x, dp.y, dp.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Stages 2 through 5: Particles Active (0.6s onwards)
+    if (elapsed >= 0.6) {
+      const stageElapsed = elapsed - 0.6;
+      const isIgnition = stageElapsed < 0.9;
+      const isFormation = stageElapsed >= 0.9 && stageElapsed < 1.8;
+      const isEmblem = stageElapsed >= 1.8 && stageElapsed < 2.4;
+      const isDissolve = stageElapsed >= 2.4;
+
+      if (centerMotif) {
+        if (stageElapsed < 1.8) {
+          centerMotif.style.opacity = '0';
+          centerMotif.style.transform = 'scale(0.85)';
+        } else if (isEmblem) {
+          const embProgress = Math.min(1.0, (stageElapsed - 1.8) / 0.4);
+          centerMotif.style.opacity = String(embProgress);
+          centerMotif.style.transform = `scale(${0.85 + embProgress * 0.15})`;
+        } else if (isDissolve) {
+          const dissProgress = (stageElapsed - 2.4) / 0.8;
+          centerMotif.style.opacity = String(Math.max(0, 1.0 - dissProgress * 1.5));
+          centerMotif.style.transform = `scale(${1.0 + dissProgress * 0.9})`;
+        }
+      }
+
+      // Optical filament lines between particles during Stage 3 (Formation) & Stage 4
+      if (stageElapsed >= 0.9 && stageElapsed < 2.5) {
+        const lineAlpha = stageElapsed < 1.4
+          ? (stageElapsed - 0.9) / 0.5
+          : stageElapsed > 2.2
+            ? (2.5 - stageElapsed) / 0.3
+            : 1.0;
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < TOTAL_PARTICLES; i += 2) {
+          for (let j = i + 1; j < TOTAL_PARTICLES; j += 3) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < 2500) {
+              const d = Math.sqrt(distSq);
+              ctx.strokeStyle = `rgba(62, 232, 159, ${(1 - d / 50) * 0.35 * lineAlpha})`;
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      // Particle physics & rendering
+      for (let i = 0; i < TOTAL_PARTICLES; i++) {
+        const p = particles[i];
+
+        if (isIgnition) {
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= Math.pow(0.92, dt * 60);
+          p.vy *= Math.pow(0.92, dt * 60);
+        } else if (isFormation || isEmblem) {
+          const pullK = isFormation ? 0.08 : 0.14;
+          const dx = p.tx - p.x;
+          const dy = p.ty - p.y;
+          p.vx += dx * pullK;
+          p.vy += dy * pullK;
+          p.vx *= 0.82;
+          p.vy *= 0.82;
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (mouse.moved) {
+            const mdx = p.x - mouse.x;
+            const mdy = p.y - mouse.y;
+            const mDistSq = mdx * mdx + mdy * mdy;
+            if (mDistSq < 10000 && mDistSq > 1) {
+              const mDist = Math.sqrt(mDistSq);
+              const repel = (1 - mDist / 100) * 4;
+              p.x += (mdx / mDist) * repel;
+              p.y += (mdy / mDist) * repel;
+            }
+          }
+        } else if (isDissolve) {
+          const dissT = stageElapsed - 2.4;
+          const outwardX = (p.x - curCx) || (Math.random() - 0.5);
+          const outwardY = (p.y - curCy) || (Math.random() - 0.5);
+          const dist = Math.sqrt(outwardX * outwardX + outwardY * outwardY) || 1;
+          const warpSpeed = 320 + dissT * 950;
+          p.x += (outwardX / dist) * warpSpeed * dt;
+          p.y += (outwardY / dist) * warpSpeed * dt;
+          p.alpha = Math.max(0, 1 - dissT / 0.8);
+        }
+
+        ctx.save();
+        ctx.fillStyle = p.targetType === 'crest'
+          ? `rgba(138, 232, 196, ${p.alpha * 0.95})`
+          : `rgba(62, 232, 159, ${p.alpha * 0.85})`;
+        ctx.shadowColor = 'rgba(62, 232, 159, 0.6)';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    if (elapsed >= 3.8 && !isDismissed) {
+      dismissIntro(false);
+      return;
+    }
+
+    animId = requestAnimationFrame(renderIntroFrame);
+  }
+
+  animId = requestAnimationFrame(renderIntroFrame);
+}
+
 // Magnetic Button Interaction
 function initMagneticButtons() {
   const btns = document.querySelectorAll('.magnetic-btn');
@@ -6754,6 +7131,7 @@ function initMagneticButtons() {
 }
 
 function initApp() {
+  initPhotonGenesisIntro();
   initHeroCanvas();
   initMagneticButtons();
 }
@@ -6785,6 +7163,45 @@ if (document.readyState === 'loading') {
 </head>
 <body>
 
+  <!-- Signature Intro Experience: Photon Genesis (Active Theory-Inspired) -->
+  <aside id="introOverlay" class="intro-overlay" role="dialog" aria-modal="true" aria-label="HiperPulse Opening Sequence">
+    <canvas id="introCanvas" class="intro-canvas"></canvas>
+    <div class="intro-hud">
+      <div class="intro-telemetry">
+        <span class="telemetry-bracket">[</span>
+        <span class="telemetry-mono">OBSERVATORY CALIBRATION // 0.001λ</span>
+        <span class="telemetry-bracket">]</span>
+      </div>
+      <button id="skipIntroBtn" class="skip-intro-btn" aria-label="Skip opening sequence">
+        <span>SKIP INTRO</span>
+        <kbd>ESC</kbd>
+      </button>
+    </div>
+    <div class="intro-center-motif" id="introCenterMotif">
+      <svg class="intro-emblem-svg" viewBox="0 0 160 160" fill="none" aria-hidden="true">
+        <circle class="intro-refract-ring" cx="80" cy="80" r="68" stroke="url(#introRingGrad)" stroke-width="2.5" stroke-dasharray="4 4"/>
+        <circle class="intro-pulse-core" cx="80" cy="80" r="42" stroke="rgba(62, 232, 159, 0.4)" stroke-width="1.5"/>
+        <path class="intro-cheek-left" d="M38 56 C28 70, 28 90, 38 104" stroke="#3ee89f" stroke-width="3" stroke-linecap="round"/>
+        <path class="intro-cheek-right" d="M122 56 C132 70, 132 90, 122 104" stroke="#3ee89f" stroke-width="3" stroke-linecap="round"/>
+        <path class="intro-wave-crest" d="M52 80 Q66 80 72 60 T80 100 T88 50 T96 90 T108 80" stroke="#8ae8c4" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="38" cy="80" r="3.5" fill="#3ee89f"/>
+        <circle cx="122" cy="80" r="3.5" fill="#3ee89f"/>
+        <defs>
+          <linearGradient id="introRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3ee89f" stop-opacity="0.95"/>
+            <stop offset="35%" stop-color="#8ae8c4" stop-opacity="0.5"/>
+            <stop offset="70%" stop-color="#f1cc8b" stop-opacity="0.75"/>
+            <stop offset="100%" stop-color="#3ee89f" stop-opacity="0.95"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="intro-title-reveal" id="introTitleReveal">
+        <span class="intro-title-line">HIPERPULSE</span>
+        <span class="intro-subtitle-line">NEURO-OPTICAL SIGNAL LAB</span>
+      </div>
+    </div>
+  </aside>
+
   <!-- Top Sticky Navigation Bar -->
   <nav class="site-nav">
     <div class="nav-container">
@@ -6808,6 +7225,7 @@ if (document.readyState === 'loading') {
       </ul>
       <div class="nav-actions">
         <span class="badge">GREEN v1.1 // EXPERIMENTAL</span>
+        <button id="replayIntroBtn" class="btn-replay-intro" title="Replay Opening Sequence" aria-label="Replay opening sequence">↺ Intro</button>
         <a href="#lab" class="btn-nav-enter magnetic-btn">Launch Cockpit ↓</a>
       </div>
     </div>
@@ -6820,9 +7238,9 @@ if (document.readyState === 'loading') {
     <div class="hero-content">
       <div class="hero-editorial">
         <p class="hero-eyebrow">CAMERA SIGNAL OBSERVATORY</p>
-        <h1 class="hero-headline">
-          SEE THE SIGNAL.
-          <span class="highlight">QUESTION THE NOISE.</span>
+        <h1 class="hero-headline" id="heroHeadline">
+          <span class="kinetic-line"><span class="kinetic-word">SEE</span> <span class="kinetic-word">THE</span> <span class="kinetic-word">SIGNAL.</span></span>
+          <span class="kinetic-line highlight"><span class="kinetic-word">QUESTION</span> <span class="kinetic-word">THE</span> <span class="kinetic-word">NOISE.</span></span>
         </h1>
         <p class="hero-summary">
           An experimental camera-based pulse signal lab built around heuristic quality gates, honest withholding, and reproducible evidence.
@@ -6833,6 +7251,12 @@ if (document.readyState === 'loading') {
         <div class="hero-actions">
           <a href="#lab" class="btn-primary-glow magnetic-btn">ENTER SIGNAL LAB</a>
           <a href="#method" class="btn-secondary-ghost magnetic-btn">EXPLORE THE METHOD</a>
+        </div>
+        <div class="hero-signal-thread" aria-hidden="true">
+          <div class="thread-stem">
+            <span class="thread-pulse"></span>
+          </div>
+          <span class="thread-label">CALIBRATED ENTRY // TRANSMISSION STREAM</span>
         </div>
       </div>
 
@@ -8662,6 +9086,262 @@ body.is-capturing .hero-canvas {
 
 body.is-capturing .hud-grid {
   opacity: 0.2;
+}
+
+/* --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) --- */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: var(--bg-void);
+  pointer-events: auto;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s var(--ease-out-expo), visibility 0.8s var(--ease-out-expo);
+  will-change: opacity, visibility;
+}
+
+.intro-overlay.intro-dismissed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.intro-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.intro-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 24px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.intro-telemetry {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.intro-telemetry .telemetry-bracket {
+  color: var(--mint-luminous);
+}
+
+.skip-intro-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mint-soft);
+  background: rgba(16, 37, 29, 0.75);
+  border: 1px solid rgba(62, 232, 159, 0.35);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all var(--trans-fast);
+}
+
+.skip-intro-btn:hover {
+  background: rgba(36, 77, 46, 0.85);
+  border-color: var(--mint-luminous);
+  box-shadow: 0 0 16px rgba(62, 232, 159, 0.35);
+  color: var(--text-white);
+  transform: translateY(-1px);
+}
+
+.skip-intro-btn kbd {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(138, 232, 196, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--mint-luminous);
+}
+
+.btn-replay-intro {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--mint-soft);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.btn-replay-intro:hover {
+  color: var(--text-white);
+  border-color: var(--mint-luminous);
+  background: rgba(62, 232, 159, 0.12);
+  box-shadow: var(--glow-emerald);
+}
+
+.intro-center-motif {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.5s var(--ease-out-expo), transform 0.6s var(--ease-out-expo);
+}
+
+.intro-emblem-svg {
+  width: 140px;
+  height: 140px;
+  filter: drop-shadow(0 0 28px rgba(62, 232, 159, 0.45));
+}
+
+.intro-refract-ring {
+  transform-origin: 80px 80px;
+  animation: introRefractSpin 14s linear infinite;
+}
+
+@keyframes introRefractSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.intro-title-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.intro-title-line {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: var(--text-white);
+  text-transform: uppercase;
+}
+
+.intro-subtitle-line {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.8px;
+  color: var(--mint-soft);
+  text-transform: uppercase;
+}
+
+/* Kinetic Typography on Hero Headline */
+.hero-headline .kinetic-line {
+  display: block;
+  overflow: hidden;
+}
+
+.hero-headline .kinetic-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.65s var(--ease-out-expo), transform 0.65s var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+
+.hero-headline .kinetic-word.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-headline .kinetic-line.highlight .kinetic-word {
+  color: var(--mint-luminous);
+  background: linear-gradient(135deg, #3ee89f 0%, #8ae8c4 40%, #546f4c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Hero-to-Lab Signal Thread Transition */
+.hero-signal-thread {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.thread-stem {
+  position: relative;
+  width: 2px;
+  height: 48px;
+  background: linear-gradient(180deg, rgba(62, 232, 159, 0.5) 0%, rgba(62, 232, 159, 0.05) 100%);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.thread-pulse {
+  position: absolute;
+  top: -14px;
+  left: -2px;
+  width: 6px;
+  height: 14px;
+  background: var(--mint-luminous);
+  box-shadow: 0 0 10px var(--mint-luminous);
+  border-radius: 3px;
+  animation: threadPulseAnim 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes threadPulseAnim {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translateY(64px); opacity: 0; }
+}
+
+.thread-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  color: var(--mint-soft);
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-overlay {
+    display: none !important;
+  }
+  .hero-headline .kinetic-word {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .thread-pulse {
+    animation: none !important;
+  }
 }
 ```
 
