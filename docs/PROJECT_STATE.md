@@ -143,8 +143,8 @@ Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theo
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, `8ac073d1741e6facea6df9875e2f1e2e2a748653`, and `0f2b4a530eb6a33ee602fe205b3cb47c1791a826`.
-- Photon Genesis signature intro implemented, tested, and video-captured.
+- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, `8ac073d1741e6facea6df9875e2f1e2e2a748653`, `0f2b4a530eb6a33ee602fe205b3cb47c1791a826`, and `16ad9ae2f455907225a3865254397a8985765032` (CI runs `40162282765` and `40162285771` PASS).
+- Photon Genesis signature intro implemented, tested, and video-captured. Synchronized with `origin/main` and `origin/remediation/audit-hardening`.
 
 ## Mandatory Release Gates
 

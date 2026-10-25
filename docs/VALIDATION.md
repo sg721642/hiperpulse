@@ -133,6 +133,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
   - 0 JavaScript syntax errors (`web/app.js`, `scripts/test_browser_acceptance.js`).
   - 17 / 17 Browser Acceptance tests passing via Brave CDP runner.
   - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
+  - GitHub Actions CI: 100% green across all 3 matrix jobs on both branches (run `40162282765` on `main`, run `40162285771` on `remediation/audit-hardening`).
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
