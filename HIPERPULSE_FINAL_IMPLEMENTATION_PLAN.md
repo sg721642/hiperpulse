@@ -754,6 +754,8 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
+- Latest verified commit: `3c790d0bcece7a7b8e1f0e4b8ee34681577ffcba`.
+- GitHub Actions CI run: `40151348462` (all 3 jobs green: Build/Lint/Test 91 passed, Offline Browser Acceptance 17 passed + negative timeout regression verified, Docker Build & Container Smoke passed).
 - All technical fixes and verification gaps completed and verified.
 
 ## Mandatory Release Gates
