@@ -101,29 +101,67 @@ function plot(id, xs, ys, color) {
   c.fillStyle='#a8bcba'; c.font='15px system-ui';
   c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
 }
-function plotOverlay(id, xs, ys1, ys2, color1, color2) {
+function plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2) {
   const canvas = $(id), c = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height, pad = 28;
-  c.clearRect(0,0,w,h);
-  if (!xs.length) return;
-  const allYs = [...ys1, ...(ys2 || [])];
-  let low = Math.min(...allYs), high = Math.max(...allYs);
-  if (high-low < 1e-8) {low = -1; high = 1;}
-  const x = v => pad+(v-xs[0])/(xs.at(-1)-xs[0] || 1)*(w-2*pad);
-  const y = v => h-pad-(v-low)/(high-low)*(h-2*pad);
-  c.strokeStyle='#263c40'; c.lineWidth=1;
-  for(let i=0;i<=4;i++){const yy=pad+i*(h-2*pad)/4;c.beginPath();c.moveTo(pad,yy);c.lineTo(w-pad,yy);c.stroke();}
+  c.clearRect(0, 0, w, h);
+  if ((!xs1 || !xs1.length) && (!xs2 || !xs2.length)) return;
+
+  const validXs = [...(xs1 || []), ...(xs2 || [])];
+  if (!validXs.length) return;
+  const xMin = Math.min(...validXs);
+  const xMax = Math.max(...validXs);
+  const xSpan = (xMax - xMin) || 1;
+
+  const allYs = [...(ys1 || []), ...(ys2 || [])];
+  let low = allYs.length ? Math.min(...allYs) : -1;
+  let high = allYs.length ? Math.max(...allYs) : 1;
+  if (high - low < 1e-8) { low = -1; high = 1; }
+  const ySpan = (high - low) || 1;
+
+  const x = v => pad + (v - xMin) / xSpan * (w - 2 * pad);
+  const y = v => h - pad - (v - low) / ySpan * (h - 2 * pad);
+
+  c.strokeStyle = '#263c40'; c.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad + i * (h - 2 * pad) / 4;
+    c.beginPath(); c.moveTo(pad, yy); c.lineTo(w - pad, yy); c.stroke();
+  }
+
   // Original curve (solid)
-  c.strokeStyle=color1; c.lineWidth=2; c.setLineDash([]); c.beginPath();
-  ys1.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+  if (xs1 && ys1 && xs1.length && ys1.length) {
+    c.strokeStyle = color1; c.lineWidth = 2; c.setLineDash([]); c.beginPath();
+    const len1 = Math.min(xs1.length, ys1.length);
+    let started = false;
+    for (let i = 0; i < len1; i++) {
+      const px = x(xs1[i]), py = y(ys1[i]);
+      if (Number.isFinite(px) && Number.isFinite(py)) {
+        if (!started) { c.moveTo(px, py); started = true; }
+        else { c.lineTo(px, py); }
+      }
+    }
+    c.stroke();
+  }
+
   // Challenge curve (dashed)
-  if (ys2 && ys2.length) {
-    c.strokeStyle=color2; c.lineWidth=2; c.setLineDash([5, 4]); c.beginPath();
-    ys2.forEach((v,i) => i ? c.lineTo(x(xs[i]),y(v)) : c.moveTo(x(xs[i]),y(v))); c.stroke();
+  if (xs2 && ys2 && xs2.length && ys2.length) {
+    c.strokeStyle = color2; c.lineWidth = 2; c.setLineDash([5, 4]); c.beginPath();
+    const len2 = Math.min(xs2.length, ys2.length);
+    let started = false;
+    for (let i = 0; i < len2; i++) {
+      const px = x(xs2[i]), py = y(ys2[i]);
+      if (Number.isFinite(px) && Number.isFinite(py)) {
+        if (!started) { c.moveTo(px, py); started = true; }
+        else { c.lineTo(px, py); }
+      }
+    }
+    c.stroke();
     c.setLineDash([]);
   }
-  c.fillStyle='#a8bcba'; c.font='15px system-ui';
-  c.fillText(xs[0].toFixed(1),pad,h-6); c.fillText(xs.at(-1).toFixed(1),w-70,h-6);
+
+  c.fillStyle = '#a8bcba'; c.font = '15px system-ui';
+  c.fillText(xMin.toFixed(1), pad, h - 6);
+  c.fillText(xMax.toFixed(1), w - 70, h - 6);
 }
 function getRetakeAdvice(checks) {
   if (!checks || !checks.length) {
@@ -177,14 +215,30 @@ function getRetakeAdvice(checks) {
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
-  if (r.source === 'synthetic' || r.source === 'sample') {
-    $('source').textContent = 'SYNTHETIC DEMO · NOT A PERSON';
-  } else if (r.source === 'video') {
-    $('source').textContent = 'LOCAL VIDEO (UNVERIFIED ORIGIN) · EXPERIMENTAL';
-  } else if (r.source === 'camera') {
-    $('source').textContent = 'LIVE CAMERA · EXPERIMENTAL';
+  const src = r.source || 'unknown';
+  const ing = r.ingestion || (currentTrace && currentTrace.ingestion) || 'direct';
+  if (src === 'synthetic') {
+    if (ing === 'json_import') {
+      $('source').textContent = 'IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN';
+    } else {
+      $('source').textContent = 'SYNTHETIC DEMO · NOT A PERSON';
+    }
+  } else if (src === 'sample') {
+    $('source').textContent = 'SAMPLE · ORIGIN UNVERIFIED';
+  } else if (src === 'camera') {
+    if (ing === 'json_import') {
+      $('source').textContent = 'IMPORTED TRACE · DECLARED CAMERA ORIGIN';
+    } else {
+      $('source').textContent = 'LIVE CAMERA · EXPERIMENTAL';
+    }
+  } else if (src === 'video') {
+    if (ing === 'json_import') {
+      $('source').textContent = 'IMPORTED TRACE · DECLARED VIDEO ORIGIN';
+    } else {
+      $('source').textContent = 'LOCAL VIDEO · ORIGIN UNVERIFIED';
+    }
   } else {
-    $('source').textContent = `${(r.source || 'UNKNOWN').toUpperCase()} · EXPERIMENTAL`;
+    $('source').textContent = `${src.toUpperCase()} · EXPERIMENTAL`;
   }
   $('decision').textContent = r.bpm === null ? 'Estimate withheld. Inspect the failed checks below.' : 'Heuristic checks passed. Biological origin and accuracy are unverified.';
   $('checks').replaceChildren();
@@ -341,12 +395,12 @@ if ($('evidenceCard')) {
       version: buildMeta.version || '1.1',
       algorithm: receipt.algorithm || buildMeta.algorithm || 'green-evidence-1.1',
       git_sha: buildMeta.git_sha || 'unknown',
-      provenance_note: 'Canonical signal_sha256 identifies the mathematical signal data. git_sha identifies the software build revision. Neither constitutes a cryptographic signature of real human or camera origin.',
+      provenance_note: 'Canonical signal_sha256 identifies the mathematical signal data rounded to 5 decimal places. git_sha identifies the software build revision. Neither constitutes a cryptographic signature of real human or camera origin.',
       timestamp_utc: new Date().toISOString(),
       declared_source: receipt.source,
-      ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
-      is_synthetic: receipt.source === 'synthetic' || receipt.source === 'sample',
-      unverified_origin: receipt.source === 'video',
+      ingestion_method: receipt.ingestion || currentTrace?.ingestion || 'direct',
+      is_synthetic: receipt.source === 'synthetic',
+      unverified_origin: receipt.source === 'video' || receipt.source === 'sample',
       signal_sha256: receipt.signal_sha256 || null,
       input_sha256: receipt.input_sha256 || null,
       sample_count: currentTrace?.timestamps?.length || receipt.waveform?.seconds?.length || 0,
@@ -443,8 +497,8 @@ async function executeChallenge(label, transformDesc, params, modifier) {
     $('comparison').textContent = `Original: ${receipt.bpm ?? 'withheld'} BPM, ${receipt.quality_score}% checks passed.\nArtifact copy: ${result.bpm ?? 'withheld'} BPM, ${result.quality_score}% checks passed.\nFailed checks: ${failedGates.map(n => n.replaceAll('_', ' ')).join(', ') || 'none — an example of the limits of these heuristics'}. Original input and receipt are unchanged.\n[${label} Result Analysis: ${outcomeAnalysis}]`;
 
     // Render visual before-vs-after overlay on waveform and spectrum (solid mint = original, dashed amber = challenge)
-    plotOverlay('wave', receipt.waveform.seconds, receipt.waveform.normalized_amplitude, result.waveform.normalized_amplitude, '#8ae8c4', '#f1cc8b');
-    plotOverlay('spectrum', receipt.spectrum.bpm, receipt.spectrum.relative_power, result.spectrum.relative_power, '#8ae8c4', '#f1cc8b');
+    plotOverlay('wave', receipt.waveform.seconds, receipt.waveform.normalized_amplitude, result.waveform.seconds, result.waveform.normalized_amplitude, '#8ae8c4', '#f1cc8b');
+    plotOverlay('spectrum', receipt.spectrum.bpm, receipt.spectrum.relative_power, result.spectrum.bpm, result.spectrum.relative_power, '#8ae8c4', '#f1cc8b');
   } catch (e) {
     status(e.message);
   } finally {

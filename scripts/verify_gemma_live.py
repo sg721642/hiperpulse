@@ -100,9 +100,16 @@ print('Testing cooldown fallback...')
 time.sleep(15)  # clear previous cooldown
 r1 = httpx.post('http://127.0.0.1:8080/api/explain', json=sample_clean,
                 headers={'X-Demo-Token': DEMO_TOKEN}, timeout=95)
-# Immediate second call should be caught by cooldown if under 10s from lock release
-# (Note: r1 holds lock and updates last_ai_call, so call right after r1 starts)
 print(f'Initial call status: {r1.status_code}, provider: {r1.json().get("provider")}')
+
+# Immediate second call must be caught by 10s cooldown
+r2 = httpx.post('http://127.0.0.1:8080/api/explain', json=sample_clean,
+                headers={'X-Demo-Token': DEMO_TOKEN}, timeout=15)
+print(f'Second call status: {r2.status_code}, provider: {r2.json().get("provider")}, reason: {r2.json().get("reason")}')
+assert r2.status_code == 200
+assert r2.json().get('provider') == 'deterministic'
+assert 'AI cooldown: wait ten seconds' in r2.json().get('reason', '')
+print('✓ Cooldown fallback verified successfully on immediate second request.')
 
 print('\n======================================================')
 print('ALL LIVE GEMMA 4 INTEGRATION TESTS PASSED SUCCESSFULLY')

@@ -34,7 +34,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
 
       - name: Secret leakage prevention check
         run: |
@@ -89,7 +89,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
 
       - name: Start backend server daemon
         env:
@@ -108,6 +108,16 @@ jobs:
       - name: Run browser acceptance suite (offline mode)
         run: |
           SKIP_LIVE_AI=1 PORT=8080 node --experimental-websocket scripts/test_browser_acceptance.js
+
+      - name: Verify negative timeout regression detection
+        run: |
+          echo "Running acceptance suite with TEST_NEGATIVE_TIMEOUT=1 (expecting non-zero exit)..."
+          if TEST_NEGATIVE_TIMEOUT=1 SKIP_LIVE_AI=1 PORT=8080 node --experimental-websocket scripts/test_browser_acceptance.js; then
+            echo "ERROR: Acceptance runner unexpectedly passed under TEST_NEGATIVE_TIMEOUT=1!"
+            exit 1
+          else
+            echo "OK: Acceptance runner correctly exited with non-zero code under forced timeout."
+          fi
 
   docker-smoke:
     name: Docker Build & Container Smoke Test

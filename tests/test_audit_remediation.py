@@ -829,10 +829,369 @@ def test_gemma_malformed_responses_fallback(monkeypatch):
         assert 'Gemma unavailable' in res['reason']
 
 
-def test_gemma_concurrency_semaphore_bounded():
-    """Test that ai_semaphore is configured with bounded limit 2."""
-    from app.main import ai_semaphore
-    assert ai_semaphore._value <= 2
+# ---------------------------------------------------------------------------
+# R1: Deterministic Concurrency, Queueing & Monotonic Deadline Suite (12 Tests)
+# ---------------------------------------------------------------------------
+
+def test_r1_concurrency_two_simultaneous_requests_both_admitted(monkeypatch):
+    """R1-01: Two concurrent requests acquire both semaphore slots and complete."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
+
+    async def run():
+        module.ai_semaphore = asyncio.Semaphore(2)
+        module.ai_lock = asyncio.Lock()
+        active_count = 0
+        max_active = 0
+
+        orig_post = httpx.AsyncClient.post
+        async def fake_post(self, url, **kwargs):
+            nonlocal active_count, max_active
+            if 'generativelanguage' in str(url):
+                active_count += 1
+                max_active = max(max_active, active_count)
+                await asyncio.sleep(0.05)
+                active_count -= 1
+                return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                    json={'candidates': [{'content': {'parts': [{'text': 'Concurrent test ok.'}]}}]})
+            return await orig_post(self, url, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+
+        transport = httpx.ASGITransport(app=module.app)
+        async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
+            task1 = ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+            task2 = ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+            r1, r2 = await asyncio.gather(task1, task2)
+
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert r1.json()['provider'] == 'Gemma 4'
+        assert r2.json()['provider'] == 'Gemma 4'
+        assert max_active == 2
+
+    asyncio.run(run())
+
+
+def test_r1_concurrency_max_active_provider_calls_strictly_bounded(monkeypatch):
+    """R1-02: Max active provider calls is strictly bounded <= 2 under 5 concurrent requests."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
+
+    async def run():
+        module.ai_semaphore = asyncio.Semaphore(2)
+        module.ai_lock = asyncio.Lock()
+        active_count = 0
+        max_observed_active = 0
+
+        orig_post = httpx.AsyncClient.post
+        async def fake_post(self, url, **kwargs):
+            nonlocal active_count, max_observed_active
+            if 'generativelanguage' in str(url):
+                active_count += 1
+                max_observed_active = max(max_observed_active, active_count)
+                await asyncio.sleep(0.04)
+                active_count -= 1
+                return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                    json={'candidates': [{'content': {'parts': [{'text': 'Bounded active ok.'}]}}]})
+            return await orig_post(self, url, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+
+        transport = httpx.ASGITransport(app=module.app)
+        async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
+            tasks = [ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}) for _ in range(5)]
+            responses = await asyncio.gather(*tasks)
+
+        for r in responses:
+            assert r.status_code == 200
+            assert r.json()['provider'] == 'Gemma 4'
+        assert max_observed_active <= 2
+
+    asyncio.run(run())
+
+
+def test_r1_queue_admission_within_budget(monkeypatch):
+    """R1-03: Queued 3rd request is admitted once slot frees and finishes within budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
+
+    async def run():
+        module.ai_semaphore = asyncio.Semaphore(2)
+        module.ai_lock = asyncio.Lock()
+        completion_order = []
+        orig_post = httpx.AsyncClient.post
+        async def fake_post(self, url, **kwargs):
+            if 'generativelanguage' in str(url):
+                await asyncio.sleep(0.05)
+                completion_order.append(len(completion_order) + 1)
+                return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                    json={'candidates': [{'content': {'parts': [{'text': 'Queue test ok.'}]}}]})
+            return await orig_post(self, url, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+
+        transport = httpx.ASGITransport(app=module.app)
+        async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
+            tasks = [ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}) for _ in range(3)]
+            results = await asyncio.gather(*tasks)
+
+        assert len(results) == 3
+        assert all(r.status_code == 200 and r.json()['provider'] == 'Gemma 4' for r in results)
+        assert len(completion_order) == 3
+
+    asyncio.run(run())
+
+
+def test_r1_queue_timeout_while_waiting_for_semaphore(monkeypatch):
+    """R1-04: Queued request waiting for semaphore times out within budget and returns fallback."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
+
+    async def run():
+        module.ai_semaphore = asyncio.Semaphore(2)
+        module.ai_lock = asyncio.Lock()
+        provider_calls = 0
+        orig_post = httpx.AsyncClient.post
+        async def slow_post(self, url, **kwargs):
+            nonlocal provider_calls
+            if 'generativelanguage' in str(url):
+                provider_calls += 1
+                await asyncio.sleep(0.4)
+                return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                    json={'candidates': [{'content': {'parts': [{'text': 'Slow provider ok.'}]}}]})
+            return await orig_post(self, url, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', slow_post)
+
+        # Set budget for the 3rd call small so it times out waiting for queue
+        transport = httpx.ASGITransport(app=module.app)
+        async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
+            # First occupy both semaphore slots with 2 slow tasks
+            t1 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
+            t2 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
+            await asyncio.sleep(0.02)  # ensure t1 and t2 have acquired slots
+
+            # 3rd request has budget of 0.05s, so it must timeout in the queue
+            monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.05)
+            r3 = await ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+
+            # Cleanup slow tasks
+            await asyncio.gather(t1, t2)
+
+        assert r3.status_code == 200
+        assert r3.json()['provider'] == 'deterministic'
+        assert 'timed out' in r3.json()['reason'].lower()
+        # Provider was only called 2 times (by t1 and t2), NEVER by r3!
+        assert provider_calls == 2
+
+    asyncio.run(run())
+
+
+def test_r1_timeout_during_signal_recomputation(monkeypatch):
+    """R1-05: Timeout during signal recomputation cleanly returns fallback within budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+    monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.05)
+
+    original_analyze = module.analyze
+    def slow_analyze(*args, **kwargs):
+        import time as tmod
+        tmod.sleep(0.15)
+        return original_analyze(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'analyze', slow_analyze)
+
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    assert 'timed out' in r.json()['reason'].lower()
+
+
+def test_r1_timeout_during_httpx_post(monkeypatch):
+    """R1-06: Timeout during HTTPX provider post cleanly returns fallback within budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+    monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.05)
+
+    async def hanging_post(self, url, **kwargs):
+        await asyncio.sleep(0.3)
+        return httpx.Response(200, request=httpx.Request('POST', url), json={})
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', hanging_post)
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    assert 'timed out' in r.json()['reason'].lower()
+
+
+def test_r1_monotonic_deadline_shared_across_retries(monkeypatch):
+    """R1-07: Transient 500 retry shares remaining monotonic deadline budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+    # Total budget 0.3s; retry requires deadline - time.monotonic() > 4.0s
+    monkeypatch.setattr(module, 'AI_TIMEOUT_BUDGET_SECONDS', 0.3)
+
+    call_count = 0
+    async def retry_post(self, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(503, request=httpx.Request('POST', url))
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', retry_post)
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    # Because budget < 4.0s, retry was skipped to prevent deadline overrun
+    assert call_count == 1
+
+
+def test_r1_cancelled_task_releases_semaphore(monkeypatch):
+    """R1-08: Cancelled task immediately releases semaphore for queued requests."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
+
+    async def run():
+        module.ai_semaphore = asyncio.Semaphore(2)
+        module.ai_lock = asyncio.Lock()
+        hold_gate = asyncio.Event()
+        orig_post = httpx.AsyncClient.post
+        async def gating_post(self, url, **kwargs):
+            if 'generativelanguage' in str(url):
+                await hold_gate.wait()
+                return httpx.Response(200, request=httpx.Request('POST', str(url)),
+                    json={'candidates': [{'content': {'parts': [{'text': 'Gate released ok.'}]}}]})
+            return await orig_post(self, url, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', gating_post)
+
+        transport = httpx.ASGITransport(app=module.app)
+        async with httpx.AsyncClient(transport=transport, base_url='http://test') as ac:
+            task1 = asyncio.create_task(ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'}))
+            await asyncio.sleep(0.02)
+            # Cancel task1 while it is holding semaphore
+            task1.cancel()
+            try:
+                await task1
+            except asyncio.CancelledError:
+                pass
+
+            # Semaphore must have both slots available
+            assert module.ai_semaphore._value == 2
+
+            # Subsequent request acquires without blocking
+            hold_gate.set()
+            r = await ac.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+            assert r.status_code == 200
+            assert r.json()['provider'] == 'Gemma 4'
+
+    asyncio.run(run())
+
+
+def test_r1_cooldown_rejection_does_not_consume_semaphore(monkeypatch):
+    """R1-09: Request rejected by 10s cooldown exits before semaphore and never consumes slot."""
+    import time
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    # Set last_ai_call to now so cooldown triggers
+    monkeypatch.setattr(module, 'last_ai_call', time.monotonic())
+
+    initial_semaphore_val = module.ai_semaphore._value
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    assert 'AI cooldown: wait ten seconds' in r.json()['reason']
+    assert module.ai_semaphore._value == initial_semaphore_val
+
+
+def test_r1_unauthenticated_request_does_not_consume_semaphore(monkeypatch):
+    """R1-10: Missing/invalid token returns 401 without consuming semaphore."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+
+    initial_semaphore_val = module.ai_semaphore._value
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'wrong-password'})
+    assert r.status_code == 401
+    assert module.ai_semaphore._value == initial_semaphore_val
+
+
+def test_r1_invalid_model_does_not_consume_semaphore(monkeypatch):
+    """R1-11: Invalid model ID falls back without consuming semaphore."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setenv('GEMMA_MODEL', 'not-a-gemma-model')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+
+    initial_semaphore_val = module.ai_semaphore._value
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    assert 'Configure an available Gemma 4 model ID' in r.json()['reason']
+    assert module.ai_semaphore._value == initial_semaphore_val
+
+
+def test_r1_unconfigured_ai_does_not_consume_semaphore(monkeypatch):
+    """R1-12: Unconfigured AI credentials fall back without consuming semaphore."""
+    import app.main as module
+    monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+    monkeypatch.delenv('DEMO_TOKEN', raising=False)
+
+    initial_semaphore_val = module.ai_semaphore._value
+    r = client.post('/api/explain', json=sample('clean'))
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'deterministic'
+    assert 'AI is not configured' in r.json()['reason']
+    assert module.ai_semaphore._value == initial_semaphore_val
+
+
+# ---------------------------------------------------------------------------
+# R5: Controlled Flat-Baseline Challenge C Scenario
+# ---------------------------------------------------------------------------
+
+def test_challenge_c_optical_flicker_on_flat_baseline_demonstrates_limitation():
+    """R5: Synchronous periodic flicker on flat baseline demonstrates optical rPPG limit without modifying thresholds."""
+    import copy
+    flat_data = sample('flat')
+    res_orig = client.post('/api/analyze', json=flat_data).json()
+    assert res_orig['bpm'] is None
+    assert res_orig['status'] == 'insufficient_quality'
+
+    # Apply synchronous 1.2 Hz (72 BPM) sine of amplitude 8.0 to both patches (Challenge C)
+    modified = copy.deepcopy(flat_data)
+    ts = np.array(modified['timestamps'])
+    flicker = 8.0 * np.sin(2.0 * np.pi * 1.2 * ts)
+
+    for i in range(len(modified['timestamps'])):
+        # Green channel is index 1
+        modified['left'][i][1] = float(np.clip(modified['left'][i][1] + flicker[i], 0, 255))
+        modified['right'][i][1] = float(np.clip(modified['right'][i][1] + flicker[i], 0, 255))
+
+    res_mod = client.post('/api/analyze', json=modified).json()
+    # Bilateral agreement passed because flicker was injected identically into both patches
+    patch_diff = next(c for c in res_mod['checks'] if c['name'] == 'patch_difference_bpm')
+    assert patch_diff['pass'] is True
+    assert patch_diff['value'] <= 1.0
+    # Candidate peak detected at 72 BPM
+    assert res_mod['bpm'] == 72
+    assert res_mod['quality_score'] >= 90
 
 
 def test_secrets_never_leaked_in_endpoints_or_cards(monkeypatch):

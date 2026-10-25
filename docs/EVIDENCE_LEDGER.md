@@ -115,3 +115,37 @@
   - Expanded `.github/workflows/ci.yml` into 3 jobs: `test` (unit tests & bundle sync), `browser-acceptance` (offline CDP browser runner), and `docker-smoke` (container build, startup, health check & Git SHA verification).
 - **Automated Test Totals:** **62 Python unit & integration tests passing** in 4.96s; **17 / 17 browser acceptance tests passing**.
 
+### Milestone G: Technical Hardening & Pre-UI Verification Completion — VERIFIED
+- **Section A (Cryptographic Fixture Manifest):**
+  - Eliminated all filename regex matching (`/^(test_video|synthetic|fixture)/i`).
+  - Implemented cryptographic SHA-256 fixture manifest (`scripts/build_manifest.py`, `samples/trusted_fixtures.json`, `web/trusted_fixtures.json`) for deterministic synthetic attribution. Unknown local videos classified as `LOCAL VIDEO (UNVERIFIED ORIGIN) · EXPERIMENTAL` (`source: 'video'`, `ingestion: 'local_video'`).
+- **Section B (Parameterized Gate Testing & CDP Download):**
+  - Added 11 mandatory regression tests A through K in `tests/test_audit_remediation.py`.
+  - Parameterized all 14 quality gates in `app/signal.py`, validating isolated gates (`duration_seconds`, `largest_gap_seconds`, `mean_green`, `clipped_pixel_fraction`, `search_boundary_bpm`) with exact 93% score and coupled gates.
+  - Upgraded browser acceptance test T07: real browser download of trace and judge evidence card to disk, reading and validating downloaded bytes from filesystem, reimport via native CDP `DOM.setFileInputFiles`, and asserting round-trip signal hash invariance (`signal_sha256`) and `ingestion: 'json_import'`. Verified negative timeout regression (`TEST_NEGATIVE_TIMEOUT=1`).
+- **Section C (Security & Packaging):**
+  - Added fault-injection & security tests for Gemma deadline budget, transient 500 retry, malformed responses, Semaphore(2) concurrency bounding, and unauthenticated 401 gate. Confirmed zero API key leakage.
+  - Reconciled documentation: Node 22 LTS CI / Node 20+ runtime compatibility, single-stage slim Docker image, qualified DigitalOcean hosting estimates, tier-dependent Gemini quotas, process-local cooldown vs cloud budget alerts, and heuristic pass percentage quality score.
+  - Validated package reproducibility with `scripts/build_bundle.py` and extracted `HiperPulse_Implementation_Kit.zip`, running all 78 tests cleanly with zero leaked secrets.
+
+### Milestone H: Astra Re-Verification Remediation R1–R6 & Final Pre-UI Checkpoint — VERIFIED
+- **R1 (True End-to-End Gemma Monotonic Deadline & Concurrency Hardening):**
+  - Enforced a single monotonic deadline budget (`60.0s`) in `app/main.py` covering semaphore queue admission, signal recomputation, and HTTPX provider execution/retries.
+  - Configured configurable `AI_COOLDOWN_SECONDS` (default 10.0s).
+  - Replaced weak internal semaphore checks with 12 deterministic concurrent/mocked-provider tests in `tests/test_audit_remediation.py`.
+- **R2 (Artifact Challenge Overlay Separate X/Y Axes):**
+  - Refactored `plotOverlay(id, xs1, ys1, xs2, ys2, color1, color2)` in `web/app.js` to compute shared domain bounds `[xMin, xMax]` and `[low, high]` and plot each curve against its own timestamps/frequencies with `Number.isFinite` checks, eliminating `NaN` coordinates and canvas draw errors for disparate array lengths (e.g. 450 vs 455 points in Challenge A).
+- **R3 (Source & Ingestion Labels & Evidence Provenance):**
+  - Refined `render(r)` in `web/app.js` to distinguish source declaration from ingestion method (`IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN`, `IMPORTED TRACE · DECLARED CAMERA ORIGIN`, `IMPORTED TRACE · DECLARED VIDEO ORIGIN`, `SAMPLE · ORIGIN UNVERIFIED`, `LIVE CAMERA · EXPERIMENTAL`, `LOCAL VIDEO · ORIGIN UNVERIFIED`).
+  - Updated `evidenceCard` to mark generic sample as `is_synthetic: false`, set `unverified_origin: true`, and document 5-decimal canonical hash rounding in `provenance_note`.
+- **R4 (Strict Release Mode & verify_gemma_live.py Cooldown Assertion):**
+  - Added `REQUIRE_LIVE_AI=1` strict release mode in `scripts/test_browser_acceptance.js` failing closed if credentials, demo token, model `gemma-4-26b-a4b-it`, or live Gemma response are missing or fallback to deterministic.
+  - Fixed `scripts/verify_gemma_live.py` lines 97–106 to immediately make a second call `r2` within 10s and assert `'AI cooldown: wait ten seconds'` is returned with HTTP 200 and deterministic provider.
+- **R5 (Strengthen Product Differentiators & Flat Challenge C):**
+  - Added automated browser checks for complete Guided Retake cycle (poor -> retake advice -> improved trace -> delta score comparison `+36%`) and Challenge C flat baseline scenario exhibiting optical rPPG false-consensus limitation without threshold alterations.
+  - Added Python unit test `test_challenge_c_optical_flicker_on_flat_baseline_demonstrates_limitation`.
+- **R6 (CI Lockfile Standardization & Negative Timeout Assertion):**
+  - Standardized `.github/workflows/ci.yml` on `pip install -r requirements-lock.txt` across all jobs to match Dockerfile.
+  - Added automated step verifying that `TEST_NEGATIVE_TIMEOUT=1` exits with non-zero code. Reconciled documentation across markdown files.
+- **Automated Test Totals:** **90 / 90 Python tests passing** in 7.21s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP; negative timeout regression verified.
+

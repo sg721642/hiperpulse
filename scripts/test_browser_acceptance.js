@@ -138,10 +138,10 @@ const REGISTERED_TESTS = [
   { id: 'T10', name: 'Clear session UI and memory reset', mandatory: true },
   { id: 'T11', name: 'Synthetic 30s WebM browser playback (0 gaps, 72 BPM)', mandatory: true },
   { id: 'T12', name: 'Short 12s video duration gate withholding', mandatory: true },
-  { id: 'T13', name: 'Gemma 4 AI consent gate and demo token enforcement', mandatory: false },
-  { id: 'T14', name: 'Real Gemma 4 clean synthetic explanation in browser', mandatory: false },
-  { id: 'T15', name: 'Real Gemma 4 failed-quality explanation in browser', mandatory: false },
-  { id: 'T16', name: 'Clear session resets explanation, token, and consent', mandatory: false },
+  { id: 'T13', name: 'Gemma 4 AI consent gate and demo token enforcement', mandatory: process.env.REQUIRE_LIVE_AI === '1' },
+  { id: 'T14', name: 'Real Gemma 4 clean synthetic explanation in browser', mandatory: process.env.REQUIRE_LIVE_AI === '1' },
+  { id: 'T15', name: 'Real Gemma 4 failed-quality explanation in browser', mandatory: process.env.REQUIRE_LIVE_AI === '1' },
+  { id: 'T16', name: 'Clear session resets explanation, token, and consent', mandatory: process.env.REQUIRE_LIVE_AI === '1' },
   { id: 'T17', name: 'Zero uncaught page errors/exceptions in browser', mandatory: true }
 ];
 
@@ -289,15 +289,17 @@ async function main() {
       }
       const artifactBpm = await client.eval(`$('bpm').textContent`);
       const artifactQuality = await client.eval(`$('quality').textContent`);
-      if (artifactBpm === '—' && artifactQuality === '86%') {
-        recordResult('T04', 'PASS', `BPM=${artifactBpm}, Quality=${artifactQuality}`);
+      const retakeText = await client.eval(`$('retakeAdvice') ? $('retakeAdvice').textContent : ''`);
+      const hasRetakeDetails = retakeText.includes('Failed check actions:') || retakeText.includes('patch difference');
+      if (artifactBpm === '—' && artifactQuality === '86%' && hasRetakeDetails) {
+        recordResult('T04', 'PASS', `BPM=${artifactBpm}, Quality=${artifactQuality}, retakeAdvice=verified`);
       } else {
-        recordResult('T04', 'FAIL', `BPM=${artifactBpm}, Quality=${artifactQuality}`);
+        recordResult('T04', 'FAIL', `BPM=${artifactBpm}, Quality=${artifactQuality}, retakeAdvice=${hasRetakeDetails}`);
       }
     } catch (e) { recordResult('T04', 'FAIL', e.message); }
 
-    // TEST 5: Flat Sample Withholding
-    console.log('\n--- Test 5: Flat Sample Withholding ---');
+    // TEST 5: Flat Sample Withholding & Challenge C Limitation
+    console.log('\n--- Test 5: Flat Sample Withholding & Challenge C Limitation ---');
     try {
       await client.eval(`$('flat').click()`);
       for (let i = 0; i < 40; i++) {
@@ -306,21 +308,36 @@ async function main() {
       }
       const flatBpm = await client.eval(`$('bpm').textContent`);
       const flatQuality = await client.eval(`$('quality').textContent`);
-      if (flatBpm === '—' && flatQuality === '64%') {
-        recordResult('T05', 'PASS', `BPM=${flatBpm}, Quality=${flatQuality}`);
+
+      // Run Challenge C (Shared Periodic Light) on flat baseline to demonstrate optical rPPG limits
+      await client.eval(`$('challengeC').click();`);
+      for (let i = 0; i < 40; i++) {
+        await sleep(100);
+        const comp = await client.eval(`$('comparison').textContent`);
+        if (comp.includes('CRITICAL SCIENTIFIC LIMITATION OBSERVED')) break;
+      }
+      const cComp = await client.eval(`$('comparison').textContent`);
+      const cExhibited = cComp.includes('CRITICAL SCIENTIFIC LIMITATION OBSERVED');
+
+      if (flatBpm === '—' && flatQuality === '64%' && cExhibited) {
+        recordResult('T05', 'PASS', `BPM=${flatBpm}, Quality=${flatQuality}, challengeC=limitation_verified`);
       } else {
-        recordResult('T05', 'FAIL', `BPM=${flatBpm}, Quality=${flatQuality}`);
+        recordResult('T05', 'FAIL', `BPM=${flatBpm}, Quality=${flatQuality}, limitationVerified=${cExhibited}`);
       }
     } catch (e) { recordResult('T05', 'FAIL', e.message); }
 
-    // TEST 6: Artifact Stress Comparison Lab
-    console.log('\n--- Test 6: Artifact Stress Comparison Lab ---');
+    // TEST 6: Artifact Stress Comparison Lab & Guided Retake Delta
+    console.log('\n--- Test 6: Artifact Stress Comparison Lab & Guided Retake Delta ---');
     try {
       await client.eval(`$('clean').click()`);
       for (let i = 0; i < 40; i++) {
         await sleep(100);
         if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
       }
+      // Verify Guided Retake Comparison: flat was previous (64%), clean is current (100%)
+      const retakeCmp = await client.eval(`$('retakeComparison') ? $('retakeComparison').textContent : ''`);
+      const retakeCmpVerified = retakeCmp.includes('Comparison with previous run:') && retakeCmp.includes('Score: 64% → 100% (+36%)');
+
       await client.eval(`$('stress').click()`);
       for (let i = 0; i < 40; i++) {
         await sleep(100);
@@ -329,10 +346,10 @@ async function main() {
       }
       const comparisonText = await client.eval(`$('comparison').textContent`);
       const baseBpmAfterStress = await client.eval(`$('bpm').textContent`);
-      if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72') {
-        recordResult('T06', 'PASS');
+      if (comparisonText.includes('Original: 72 BPM, 100%') && comparisonText.includes('Artifact copy: withheld BPM, 79%') && baseBpmAfterStress === '72' && retakeCmpVerified) {
+        recordResult('T06', 'PASS', 'Guided retake delta & stress comparison verified');
       } else {
-        recordResult('T06', 'FAIL', comparisonText);
+        recordResult('T06', 'FAIL', `retakeCmp=${retakeCmpVerified}, comp=${comparisonText.slice(0, 50)}`);
       }
     } catch (e) { recordResult('T06', 'FAIL', e.message); }
 
@@ -381,6 +398,7 @@ async function main() {
       const card = JSON.parse(downloadedCardRaw);
       if (card.application !== 'HiperPulse' || card.algorithm !== 'green-evidence-1.1' ||
           card.signal_sha256 !== originalSignalHash || card.bpm_estimate !== 72 ||
+          card.is_synthetic !== true || !card.provenance_note?.includes('rounded to 5 decimal places') ||
           !Array.isArray(card.disclaimers) || card.disclaimers.length !== 3) {
         throw new Error(`Judge evidence card validation failed: app=${card.application}, algo=${card.algorithm}`);
       }
@@ -401,12 +419,14 @@ async function main() {
         if (st.includes('Analysis complete')) break;
       }
       const reimportedReceipt = await client.eval(`receipt`);
+      const reimportedLabel = await client.eval(`$('source').textContent`);
       if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash &&
           reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100 &&
-          reimportedReceipt.ingestion === 'json_import') {
-        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, ingestion=json_import`);
+          reimportedReceipt.ingestion === 'json_import' &&
+          reimportedLabel === 'IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN') {
+        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, label="${reimportedLabel}"`);
       } else {
-        recordResult('T07', 'FAIL', `receiptLoaded=${Boolean(reimportedReceipt)}, hashMatch=${reimportedReceipt?.signal_sha256 === originalSignalHash}`);
+        recordResult('T07', 'FAIL', `receiptLoaded=${Boolean(reimportedReceipt)}, hashMatch=${reimportedReceipt?.signal_sha256 === originalSignalHash}, label="${reimportedLabel}"`);
       }
     } catch (e) { recordResult('T07', 'FAIL', e.message); }
 
@@ -568,7 +588,14 @@ async function main() {
       if (match) demoToken = match[1].trim();
     }
 
-    if (demoToken && !process.env.SKIP_LIVE_AI) {
+    const liveAiStrict = process.env.REQUIRE_LIVE_AI === '1';
+    if (liveAiStrict && (!demoToken || process.env.SKIP_LIVE_AI)) {
+      console.error('\n[FAIL] Strict release mode (REQUIRE_LIVE_AI=1) enforced, but credentials/token are missing or SKIP_LIVE_AI is active.');
+      recordResult('T13', 'FAIL', 'REQUIRE_LIVE_AI=1 fail-closed: credentials or token missing');
+      recordResult('T14', 'FAIL', 'REQUIRE_LIVE_AI=1 fail-closed: credentials or token missing');
+      recordResult('T15', 'FAIL', 'REQUIRE_LIVE_AI=1 fail-closed: credentials or token missing');
+      recordResult('T16', 'FAIL', 'REQUIRE_LIVE_AI=1 fail-closed: credentials or token missing');
+    } else if (demoToken && !process.env.SKIP_LIVE_AI) {
       // TEST 13: Gemma 4 AI Consent Gate & Demo Password Enforcement
       console.log('\n--- Test 13: Gemma 4 AI Consent & Demo Token Gate ---');
       try {
@@ -614,10 +641,11 @@ async function main() {
         const cleanHasModel = explainText.includes('Gemma 4 / gemma-4-26b-a4b-it');
         const cleanHasSynthetic = /synthetic/i.test(explainText);
         const cleanHas72 = explainText.includes('72');
-        if (liveDone && cleanHasModel && cleanHasSynthetic && cleanHas72) {
+        const cleanNotFallback = !explainText.startsWith('deterministic');
+        if (liveDone && cleanHasModel && cleanHasSynthetic && cleanHas72 && (!liveAiStrict || cleanNotFallback)) {
           recordResult('T14', 'PASS');
         } else {
-          recordResult('T14', 'FAIL', `model=${cleanHasModel}, synthetic=${cleanHasSynthetic}, bpm=${cleanHas72}`);
+          recordResult('T14', 'FAIL', `model=${cleanHasModel}, synthetic=${cleanHasSynthetic}, bpm=${cleanHas72}, fallback=${!cleanNotFallback}`);
         }
       } catch (e) { recordResult('T14', 'FAIL', e.message); }
 
@@ -649,10 +677,11 @@ async function main() {
         const artHasModel = explainArtText.includes('Gemma 4 / gemma-4-26b-a4b-it');
         const artHasWithheld = /withheld/i.test(explainArtText);
         const artHasChecks = explainArtText.toLowerCase().includes('patch') || explainArtText.toLowerCase().includes('check') || explainArtText.toLowerCase().includes('failed');
-        if (liveArtDone && artHasModel && artHasWithheld && artHasChecks) {
+        const artNotFallback = !explainArtText.startsWith('deterministic');
+        if (liveArtDone && artHasModel && artHasWithheld && artHasChecks && (!liveAiStrict || artNotFallback)) {
           recordResult('T15', 'PASS');
         } else {
-          recordResult('T15', 'FAIL', `model=${artHasModel}, withheld=${artHasWithheld}`);
+          recordResult('T15', 'FAIL', `model=${artHasModel}, withheld=${artHasWithheld}, fallback=${!artNotFallback}`);
         }
       } catch (e) { recordResult('T15', 'FAIL', e.message); }
 

@@ -75,8 +75,11 @@ def test_pydantic_trace_boundary_enforcement():
 
 def test_gemma_prompt_sanitization_and_privacy(monkeypatch):
     """Verify Gemma prompt NEVER receives raw video, frames, or full timestamps."""
+    import app.main as module
     monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
     monkeypatch.setenv('DEMO_TOKEN', 'mock-pass')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+    monkeypatch.setattr(module, 'AI_COOLDOWN_SECONDS', 0.0)
     captured_prompts = []
 
     async def fake_post(self, url, **kwargs):

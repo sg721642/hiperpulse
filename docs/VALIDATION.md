@@ -7,15 +7,15 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **62 passed in 4.96s**, 0 failures, 0 errors.
+- **Result:** **90 passed in 7.21s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
   - 7 video regression tests (`tests/test_video_regression.py`)
   - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`)
-  - 16 audit remediation and differentiator tests (`tests/test_audit_remediation.py`):
+  - 44 audit remediation, concurrency, and differentiator tests (`tests/test_audit_remediation.py`):
     - Algorithm version bumped to `green-evidence-1.1`
     - Both-patch independent exposure checks `[20, 235]` (6 isolated boundary cases)
     - Canonical `signal_sha256` identity hash and Pydantic `ingestion` tagging
-    - Gemma 60s server deadline budget and structured timeout fallback
+    - Gemma 60s server monotonic deadline budget and structured timeout fallback
     - Strict authentic PTS error enforcement
     - Exact 7199, 7200, 7201 frame boundary tests
     - Individual corruption tests for all 14 quality gates
@@ -25,6 +25,8 @@ Prepared 25 October 2026. This file separates observed software checks from task
     - Dynamic build provenance not stale assertion (`test_build_info_provenance_not_stale`)
     - Authoritative Guided Retake 14-check category mapping assertion (`test_retake_advice_mapping_all_categories`)
     - Challenge A continuity rule threshold check (`test_challenge_a_continuity_rule_and_threshold`)
+    - 12 R1 monotonic deadline & concurrency tests: simultaneous request admission, provider concurrency strictly bounded, semaphore queue admission, queue timeout, signal recomputation timeout, HTTPX POST timeout, deadline shared across retries, task cancellation cleanup, cooldown rejection, unauthenticated rejection, invalid model rejection, and unconfigured AI rejection
+    - 1 Challenge C flat baseline limitation unit test (`test_challenge_c_optical_flicker_on_flat_baseline_demonstrates_limitation`)
 
 - **JavaScript Syntax Check:** `node --check web/app.js` and `node --check scripts/test_browser_acceptance.js` -> **PASSED**.
 
@@ -35,20 +37,23 @@ Prepared 25 October 2026. This file separates observed software checks from task
   1. Security headers & `.env` exclusion: CSP `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`; `/.env` returns HTTP 404.
   2. Consent gate enforcement: Camera button and trace upload disabled until consent checkbox is checked.
   3. Clean synthetic sample: 72 BPM, 100% checklist (14/14 checks passed), `accepted_experimental`.
-  4. Artifact synthetic sample: BPM null, 86% checklist, status `insufficient_quality`.
-  5. Flat synthetic sample: BPM null, 64% checklist, status `insufficient_quality`.
-  6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates).
-  7. Evidence receipt & trace reimport: Trace reimported into fresh session produces deterministic SHA-256 match and identical 72 BPM / 100% output.
+  4. Artifact synthetic sample: BPM null, 86% checklist, status `insufficient_quality`, verified Guided Retake action advice rendering.
+  5. Flat synthetic sample: BPM null, 64% checklist, status `insufficient_quality`, verified Challenge C on flat baseline triggers the `CRITICAL SCIENTIFIC LIMITATION OBSERVED` analysis notice.
+  6. Artifact stress comparison lab: Original sample preserved (72 BPM / 100%); modified copy withheld (BPM null / 79%, 3 failed gates); verified Guided Retake comparison correctly calculates score delta `64% → 100% (+36%)` and gate improvements.
+  7. Evidence receipt & trace reimport: Real CDP file download of trace and judge evidence card to disk; reimport into fresh session produces deterministic `signal_sha256` match, identical 72 BPM / 100% output, `provenance_note` documenting 5-decimal canonical hash rounding, `is_synthetic === true`, and reimported label `IMPORTED TRACE · DECLARED SYNTHETIC ORIGIN`.
   8. Camera lifecycle & stop/discard: Capturing from camera, clicking Stop cleanly stops all MediaStream tracks and discards incomplete trace without submitting to backend.
   9. Tab-hide visibility interruption: Dispatching `visibilitychange` (`hidden`) aborts active capture and clears buffer to prevent stale estimation.
   10. Clear session UI reset: Clears all waveform, spectrum, BPM, quality metrics, and disabled export/explanation buttons.
   11. Synthetic 30s WebM browser playback: Real-time 30-second playback through native `requestVideoFrameCallback` over `HTMLVideoElement`; 900 frames extracted, 0 gaps (`largest_gap_seconds: 0.034s`, `timing_variation: 0.0141`), **72 BPM**, **100% checks passed**, status `accepted_experimental`, provenance `SYNTHETIC DEMO · NOT A PERSON`.
   12. Short 12s video browser withholding: Real-time 12-second playback extracts 360 frames; backend withholds BPM (`null`), fails `duration_seconds` gate (93% checks passed), status `insufficient_quality`.
-  13. Gemma 4 AI consent gate and demo token enforcement: Verifies UI blocks explanation when summary sharing is unchecked, and returns HTTP 401 if demo password is missing or invalid.
+  13. Gemma 4 AI consent gate and demo token enforcement: Verifies UI blocks explanation when summary sharing is unchecked, and returns HTTP 401 if demo password is missing or invalid. Strict release mode (`REQUIRE_LIVE_AI=1`) fails closed if credentials, demo token, exact model `gemma-4-26b-a4b-it`, or live response are missing.
   14. Real Gemma 4 clean synthetic explanation in browser: Live call to `gemma-4-26b-a4b-it` renders in browser with exact model tag, synthetic provenance attribution, 72 BPM confirmation, and non-clinical disclaimer.
   15. Real Gemma 4 failed-quality explanation in browser: Live call to `gemma-4-26b-a4b-it` renders in browser explaining withheld BPM and identifying specific failed gates (`patch_difference_bpm` and `estimator_difference_bpm`).
   16. Clear session clears AI explanation, password input, and consent: Confirms `#explanation` resets to default placeholder, token input is cleared from memory, and checkboxes are unchecked.
   17. Console errors audit: 0 unhandled JavaScript exceptions, 0 network errors, 0 runtime warnings during entire suite execution.
+
+- **Negative Regression Verification:** `TEST_NEGATIVE_TIMEOUT=1` verified to fail T11 and exit with non-zero code.
+- **Live Script Verification:** `scripts/verify_gemma_live.py` lines 97-106 verified to immediately make a second call `r2` within 10s and assert `'AI cooldown: wait ten seconds'` is returned with HTTP 200 and deterministic provider.
 
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
@@ -69,7 +74,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
 
 | Check | Expected | Status in this Workspace |
 |---|---|---|
-| Automated unit & API test suite | 46 passed | VERIFIED (46 passed in 4.01s) |
+| Automated unit & API test suite | 90 passed | VERIFIED (90 passed in 7.21s) |
 | JavaScript syntax check | Passes node --check | VERIFIED (app.js and test_browser_acceptance.js) |
 | Sample analyze endpoints | 72 BPM / null withholding | VERIFIED (Clean 72/100%, Artifact null/86%, Flat null/64%) |
 | Artifact comparison lab | Original preserved, copy withheld | VERIFIED (Original 72/100%, Copy null/79%, 3 failed gates) |
