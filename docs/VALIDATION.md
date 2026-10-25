@@ -57,11 +57,11 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Physical Camera Capture (Historical Evidence):** Owner provided verification of a successful 30-second physical webcam recording on macOS Brave (Source: `camera`, Experimental BPM: 49, 14/14 checks passed, duration ~30s). Captured evidence is preserved; physical hardware checks remain marked `NOT RUN` during automated headless runs to prevent fabrication.
 - **Local Docker Readiness:**
   - Audit: `docker` command line utility is not installed on this local macOS development environment (`command not found`).
-  - Static Dockerfile Verification: Multi-stage slim image (`python:3.12-slim`), non-root execution (`appuser:10001`), bind address `0.0.0.0:8080`, concurrency capped at 20.
+  - Static Dockerfile Verification: Single-stage slim image (`python:3.12-slim`), non-root execution (`appuser:10001`), bind address `0.0.0.0:8080`, concurrency capped at 20.
   - Context Security: Whitelist `.dockerignore` (`*` ignore-all default) strictly excludes `.env`, secrets, `.git`, `tests/`, `samples/`, and logs.
 - **DigitalOcean App Platform Deployment Readiness:**
   - Deployment specification created: `deploy/digitalocean/app.yaml`.
-  - Deployment guide and cost breakdown: `docs/DEPLOYMENT_DIGITALOCEAN.md` ($5.00/mo basic-xxs container).
+  - Deployment guide and cost breakdown: `docs/DEPLOYMENT_DIGITALOCEAN.md` (basic-xxs/xs container, pricing verified at deployment time).
   - Pre-Deployment Security Gate: Gemini API key used in development is marked `EXPOSED / ROTATION REQUIRED BEFORE PUBLIC DEPLOYMENT`. Must be revoked and replaced before production launch.
   - Mandatory Owner Gate: Deployment is `BLOCKED_PENDING_UI_REVIEW_AND_OWNER_AUTHORIZATION`.
 

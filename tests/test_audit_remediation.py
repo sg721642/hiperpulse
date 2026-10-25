@@ -2,6 +2,7 @@
 import asyncio
 from copy import deepcopy
 import json
+from pathlib import Path
 import numpy as np
 import httpx
 import pytest
@@ -331,14 +332,111 @@ def test_each_of_fourteen_gates_individually_fails():
         d['right'][i] = [108.0, 108.0, 108.0]
     check_withheld(d, 'relative_signal_std')
 
-    # 9. patch_difference_bpm (> 8 BPM)
+    # 9. spectral_concentration (< 0.50)
     d = deepcopy(base)
     t = np.array(d['timestamps'])
-    # Patch 1 at 1.2 Hz (72 BPM), Patch 2 at 1.5 Hz (90 BPM) -> delta = 18 BPM
+    freqs = [0.8, 1.2, 1.6, 2.0, 2.4, 2.8]
+    multi_sine = sum(np.sin(2 * np.pi * f * t) for f in freqs)
+    g9 = 110.0 + 0.3 * multi_sine
+    d['left'] = np.column_stack([g9 * 0.9, g9, g9 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g9 * 0.9, g9, g9 * 0.75]).round(5).tolist()
+    check_withheld(d, 'spectral_concentration')
+
+    # 10. patch_difference_bpm (> 8 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
     p2 = np.sin(2 * np.pi * 1.5 * t)
     g2 = 108.0 + 1.5 * p2
     d['right'] = np.column_stack([g2 * 0.9, g2, g2 * 0.75]).round(5).tolist()
     check_withheld(d, 'patch_difference_bpm')
+
+    # 11. half_difference_bpm (> 10 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    half = len(t) // 2
+    p_first = np.sin(2 * np.pi * 1.2 * t[:half])
+    p_second = np.sin(2 * np.pi * 1.6 * t[half:])
+    g11 = np.concatenate([110.0 + 1.2 * p_first, 110.0 + 1.2 * p_second])
+    d['left'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()
+    check_withheld(d, 'half_difference_bpm')
+
+    # 12. estimator_difference_bpm (> 10 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    wave = np.sin(2 * np.pi * 0.75 * t) + 1.2 * np.sin(2 * np.pi * 1.5 * t)
+    g12 = 110.0 + 0.6 * wave
+    d['left'] = np.column_stack([g12 * 0.9, g12, g12 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g12 * 0.9, g12, g12 * 0.75]).round(5).tolist()
+    check_withheld(d, 'estimator_difference_bpm')
+
+    # 13. autocorrelation (< 0.45)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    wave13 = np.sin(2 * np.pi * (0.8 + 0.04 * t) * t)
+    g13 = 110.0 + 1.0 * wave13
+    d['left'] = np.column_stack([g13 * 0.9, g13, g13 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g13 * 0.9, g13, g13 * 0.75]).round(5).tolist()
+    check_withheld(d, 'autocorrelation')
+
+    # 14. search_boundary_bpm (< 45 or > 177 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    p14 = np.sin(2 * np.pi * 0.72 * t)  # 0.72 Hz = 43.2 BPM < 45 BPM
+    g14 = 110.0 + 1.2 * p14
+    d['left'] = np.column_stack([g14 * 0.9, g14, g14 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g14 * 0.9, g14, g14 * 0.75]).round(5).tolist()
+    check_withheld(d, 'search_boundary_bpm')
+
+
+def test_truly_isolated_gates_single_failure_exact_score():
+    """Verify that the 5 truly orthogonal gates can fail in total isolation:
+    exactly 1 failing check, 13/14 passing, quality_score == 93%, with BPM withheld."""
+    base = sample('clean')
+    t = np.array(base['timestamps'])
+
+    def assert_isolated(modified, gate_name):
+        r = analyze(modified)
+        failed = [c['name'] for c in r['checks'] if not c['pass']]
+        assert failed == [gate_name], f"Expected only {gate_name} to fail, got {failed}"
+        assert r['quality_score'] == 93
+        assert r['bpm'] is None
+        assert r['status'] == 'insufficient_quality'
+        assert len(r['waveform']['seconds']) > 0
+        assert len(r['spectrum']['bpm']) > 0
+
+    # 1. duration_seconds
+    d1 = deepcopy(base)
+    for k in ('timestamps', 'left', 'right', 'clipping'):
+        d1[k] = d1[k][:450]
+    assert_isolated(d1, 'duration_seconds')
+
+    # 2. largest_gap_seconds
+    d2 = deepcopy(base)
+    d2['timestamps'][100] += 0.25
+    for i in range(101, len(d2['timestamps'])):
+        d2['timestamps'][i] += 0.25
+    assert_isolated(d2, 'largest_gap_seconds')
+
+    # 3. mean_green (preserving pulse wave so relative std and others pass)
+    d3 = deepcopy(base)
+    p = np.sin(2 * np.pi * 1.2 * t)
+    g = 15.0 + 0.3 * p
+    d3['left'] = np.column_stack([g * 0.9, g, g * 0.75]).round(5).tolist()
+    assert_isolated(d3, 'mean_green')
+
+    # 4. clipped_pixel_fraction
+    d4 = deepcopy(base)
+    d4['clipping'] = [0.10] * len(d4['clipping'])
+    assert_isolated(d4, 'clipped_pixel_fraction')
+
+    # 5. search_boundary_bpm
+    d5 = deepcopy(base)
+    p5 = np.sin(2 * np.pi * 0.72 * t)
+    g5 = 110.0 + 1.2 * p5
+    d5['left'] = np.column_stack([g5 * 0.9, g5, g5 * 0.75]).round(5).tolist()
+    d5['right'] = np.column_stack([g5 * 0.9, g5, g5 * 0.75]).round(5).tolist()
+    assert_isolated(d5, 'search_boundary_bpm')
 
 
 # ---------------------------------------------------------------------------
@@ -539,5 +637,221 @@ def test_challenge_a_continuity_rule_and_threshold():
     res = analyze(sample('clean'))
     gap_check = next(c for c in res['checks'] if c['name'] == 'largest_gap_seconds')
     assert gap_check['rule'] == '<= 0.2 s'
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Synthetic Fixture Provenance Regressions (Tests A - K)
+# ---------------------------------------------------------------------------
+
+def test_provenance_a_known_30s_webm_fixture_recognized():
+    """Test A: Known 30s WebM fixture recognized by content-hash in manifest."""
+    manifest_path = Path(__file__).resolve().parent.parent / 'samples' / 'trusted_fixtures.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    video_fixtures = manifest['video_fixtures']
+    entry = next(v for v in video_fixtures.values() if v['fixture_id'] == 'test_video_30s.webm')
+    assert entry['source'] == 'synthetic'
+    assert '72 BPM' in entry['description']
+    assert entry['duration_seconds'] == 30.0
+
+
+def test_provenance_b_renamed_known_fixture_retains_synthetic(tmp_path):
+    """Test B: Renamed known fixture (e.g. user_recording.webm) retains synthetic status via hash."""
+    from scripts.build_manifest import hash_file
+    root = Path(__file__).resolve().parent.parent
+    src = root / 'samples' / 'test_video_30s.webm'
+    dest = tmp_path / 'arbitrary_camera_name.webm'
+    dest.write_bytes(src.read_bytes())
+    sha = hash_file(dest)
+    manifest = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    assert sha in manifest['video_fixtures']
+    assert manifest['video_fixtures'][sha]['source'] == 'synthetic'
+
+
+def test_provenance_c_arbitrary_video_renamed_synthetic_demo_classified_as_video(tmp_path):
+    """Test C: Arbitrary video renamed to synthetic_demo.webm is NOT synthetic because hash is not in manifest."""
+    from scripts.build_manifest import hash_file
+    root = Path(__file__).resolve().parent.parent
+    manifest = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    fake_vid = tmp_path / 'synthetic_demo_recording.webm'
+    fake_vid.write_bytes(b'arbitrary video data not in manifest 1234567890')
+    sha = hash_file(fake_vid)
+    assert sha not in manifest['video_fixtures']
+
+
+def test_provenance_d_unknown_video_classified_as_unverified_origin():
+    """Test D: Unknown video classified as source='video', ingestion='local_video'."""
+    base = sample('clean')
+    base['source'] = 'video'
+    base['ingestion'] = 'local_video'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'video'
+    assert data['ingestion'] == 'local_video'
+
+
+def test_provenance_e_camera_trace_preserves_source_and_json_import():
+    """Test E: Camera-source trace export/import preserves 'camera' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'camera'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'camera'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_f_video_trace_preserves_source_and_json_import():
+    """Test F: Video-source trace export/import preserves 'video' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'video'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'video'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_g_synthetic_trace_preserves_source_and_json_import():
+    """Test G: Synthetic-source trace export/import preserves 'synthetic' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'synthetic'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'synthetic'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_h_modified_samples_alter_signal_sha256():
+    """Test H: Modified numeric samples alter signal_sha256."""
+    base = sample('clean')
+    res1 = analyze(base)
+    mod = deepcopy(base)
+    mod['left'][10][1] += 0.5
+    res2 = analyze(mod)
+    assert res1['signal_sha256'] != res2['signal_sha256']
+
+
+def test_provenance_i_metadata_only_changes_preserve_signal_sha256():
+    """Test I: Metadata-only changes preserve signal_sha256."""
+    base = sample('clean')
+    base['source'] = 'camera'
+    base['ingestion'] = 'live_capture'
+    res1 = analyze(base)
+    mod = deepcopy(base)
+    mod['source'] = 'video'
+    mod['ingestion'] = 'json_import'
+    res2 = analyze(mod)
+    assert res1['signal_sha256'] == res2['signal_sha256']
+    assert res1['input_sha256'] != res2['input_sha256']
+
+
+def test_provenance_j_legacy_receipts_without_ingestion_compatible():
+    """Test J: Legacy receipts without ingestion field remain fully compatible."""
+    base = sample('clean')
+    if 'ingestion' in base:
+        del base['ingestion']
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['ingestion'] == 'direct'
+    assert data['status'] == 'accepted_experimental'
+
+
+def test_provenance_k_manifest_generator_reproducibility():
+    """Test K: scripts/build_manifest.py generates valid, reproducible manifest in samples/ and web/."""
+    from scripts.build_manifest import build_manifest
+    manifest = build_manifest()
+    root = Path(__file__).resolve().parent.parent
+    samples_mf = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    web_mf = json.loads((root / 'web' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    assert samples_mf == web_mf
+    assert len(manifest['video_fixtures']) == 5
+    assert len(manifest['trace_fixtures']) == 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Gemma Deadline, Concurrency & Security Tests
+# ---------------------------------------------------------------------------
+
+def test_gemma_transient_500_retry_success(monkeypatch):
+    """Test transient 500 error followed by successful retry within deadline budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+
+    call_count = 0
+    async def fake_retry_post(self, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(500, request=httpx.Request('POST', url))
+        return httpx.Response(200, request=httpx.Request('POST', url),
+            json={'candidates': [{'content': {'parts': [{'text': 'Retried explanation succeeded.'}]}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', fake_retry_post)
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'Gemma 4'
+    assert 'Retried explanation succeeded.' in r.json()['text']
+    assert call_count == 2
+
+
+def test_gemma_malformed_responses_fallback(monkeypatch):
+    """Test malformed responses fall back cleanly without altering measurement."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+
+    cases = [
+        {},
+        {'candidates': []},
+        {'candidates': [{'content': {'parts': []}}]},
+        {'candidates': [{'content': {'parts': [{'text': ''}]}}]},
+        {'candidates': [{'content': {'parts': [{'text': 'x' * 3500}]}}]},
+    ]
+
+    for body in cases:
+        monkeypatch.setattr(module, 'last_ai_call', 0)
+        async def fake_post(self, url, **kwargs):
+            return httpx.Response(200, request=httpx.Request('POST', url), json=body)
+        monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+
+        r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+        assert r.status_code == 200
+        res = r.json()
+        assert res['provider'] == 'deterministic'
+        assert 'Gemma unavailable' in res['reason']
+
+
+def test_gemma_concurrency_semaphore_bounded():
+    """Test that ai_semaphore is configured with bounded limit 2."""
+    from app.main import ai_semaphore
+    assert ai_semaphore._value <= 2
+
+
+def test_secrets_never_leaked_in_endpoints_or_cards(monkeypatch):
+    """Test that configured GEMINI_API_KEY never leaks in API endpoints, health, meta, or card data."""
+    secret = 'secret-canary-key-9876543210'
+    monkeypatch.setenv('GEMINI_API_KEY', secret)
+    monkeypatch.setenv('DEMO_TOKEN', 'canary-token')
+
+    r_health = client.get('/api/health')
+    assert secret not in r_health.text
+
+    r_meta = client.get('/api/meta')
+    assert secret not in r_meta.text
+
+    r_unauth = client.post('/api/explain', json=sample('clean'))
+    assert secret not in r_unauth.text
+
+    r_sample = client.get('/api/sample/clean')
+    assert secret not in r_sample.text
+
 
 

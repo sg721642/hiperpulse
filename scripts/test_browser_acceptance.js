@@ -209,6 +209,11 @@ async function main() {
     await client.connect();
     console.log('✓ Connected via Chrome DevTools Protocol');
 
+    const DOWNLOAD_DIR = path.resolve(USER_DATA_DIR, 'downloads');
+    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+    try { await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR }); } catch {}
+    try { await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR, eventsEnabled: true }); } catch {}
+
     // Ensure the page is navigated to target URL and loaded
     await client.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
     await sleep(1500);
@@ -340,21 +345,55 @@ async function main() {
         if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
       }
       const originalReceipt = await client.eval(`receipt`);
-      const originalTrace = await client.eval(`currentTrace`);
       const originalSignalHash = originalReceipt.signal_sha256;
 
-      // Reimport using native File and DataTransfer into #traceFile
-      await client.eval(`
-        (async () => {
-          $('consent').checked = true;
-          const jsonStr = ${JSON.stringify(JSON.stringify(originalTrace))};
-          const file = new File([jsonStr], 'reimport_trace.json', { type: 'application/json' });
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          $('traceFile').files = dt.files;
-          $('traceFile').dispatchEvent(new Event('change', { bubbles: true }));
-        })()
-      `);
+      // 1. Real browser download of trace via $('trace').click()
+      await client.eval(`$('trace').click()`);
+      const traceFilePath = path.join(DOWNLOAD_DIR, 'hiperpulse-trace.json');
+      let traceDownloaded = false;
+      for (let i = 0; i < 30; i++) {
+        await sleep(100);
+        if (fs.existsSync(traceFilePath)) {
+          traceDownloaded = true;
+          break;
+        }
+      }
+      if (!traceDownloaded) throw new Error('Trace file was not downloaded to disk');
+      const downloadedTraceRaw = fs.readFileSync(traceFilePath, 'utf8');
+      const downloadedTrace = JSON.parse(downloadedTraceRaw);
+      if (!Array.isArray(downloadedTrace.timestamps) || downloadedTrace.timestamps.length < 150) {
+        throw new Error('Downloaded trace file is malformed');
+      }
+
+      // 2. Real browser download of judge evidence card via $('evidenceCard').click()
+      await client.eval(`$('evidenceCard').click()`);
+      const cardFilePath = path.join(DOWNLOAD_DIR, 'hiperpulse-judge-evidence.json');
+      let cardDownloaded = false;
+      for (let i = 0; i < 30; i++) {
+        await sleep(100);
+        if (fs.existsSync(cardFilePath)) {
+          cardDownloaded = true;
+          break;
+        }
+      }
+      if (!cardDownloaded) throw new Error('Judge evidence card was not downloaded to disk');
+      const downloadedCardRaw = fs.readFileSync(cardFilePath, 'utf8');
+      const card = JSON.parse(downloadedCardRaw);
+      if (card.application !== 'HiperPulse' || card.algorithm !== 'green-evidence-1.1' ||
+          card.signal_sha256 !== originalSignalHash || card.bpm_estimate !== 72 ||
+          !Array.isArray(card.disclaimers) || card.disclaimers.length !== 3) {
+        throw new Error(`Judge evidence card validation failed: app=${card.application}, algo=${card.algorithm}`);
+      }
+
+      // 3. Clear session to guarantee reimport starts from blank state
+      await client.eval(`$('clear').click()`);
+      await sleep(150);
+
+      // 4. Reimport via real CDP DOM.setFileInputFiles on #traceFile
+      await client.eval(`$('consent').checked = true;`);
+      const doc = await client.send('DOM.getDocument');
+      const traceInput = await client.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#traceFile' });
+      await client.send('DOM.setFileInputFiles', { files: [traceFilePath], nodeId: traceInput.nodeId });
 
       for (let i = 0; i < 40; i++) {
         await sleep(100);
@@ -362,8 +401,10 @@ async function main() {
         if (st.includes('Analysis complete')) break;
       }
       const reimportedReceipt = await client.eval(`receipt`);
-      if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash && reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100) {
-        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72`);
+      if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash &&
+          reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100 &&
+          reimportedReceipt.ingestion === 'json_import') {
+        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, ingestion=json_import`);
       } else {
         recordResult('T07', 'FAIL', `receiptLoaded=${Boolean(reimportedReceipt)}, hashMatch=${reimportedReceipt?.signal_sha256 === originalSignalHash}`);
       }

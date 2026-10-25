@@ -585,7 +585,7 @@ def analyze(data):
     stride = max(1, int(np.ceil(len(grid)/600)))
     display = wave / max(float(np.std(wave)), 1e-12)
     return {'schema_version':1, 'algorithm':VERSION, 'source':data['source'],
-            'ingestion':data.get('ingestion', 'direct'),
+            'ingestion':data.get('ingestion') or 'direct',
             'input_sha256':digest, 'signal_sha256':signal_digest,
             'exposure_metrics':{'patch1_mean':round(patch1_mean, 4), 'patch2_mean':round(patch2_mean, 4),
                                 'min_mean':round(min_light, 4), 'max_mean':round(max_light, 4)},
@@ -702,6 +702,7 @@ import zipfile
 import runpy
 
 root=Path(__file__).resolve().parent.parent
+runpy.run_path(str(root/'scripts'/'build_manifest.py'),run_name='__main__')
 root_files=['START_HERE.md','README.md','MASTER_IMPLEMENTATION.md','AGENTS.md',
             'THIRD_PARTY_NOTICES.md','LICENSE','requirements.txt','requirements-lock.txt',
             'pytest.ini','.env.example','.gitignore','Dockerfile','.dockerignore']
@@ -789,6 +790,99 @@ for title, filename in sections:
 result = root / 'HIPERPULSE_FINAL_IMPLEMENTATION_PLAN.md'
 result.write_text('\n'.join(parts), encoding='utf-8')
 print(f'Final plan: {result.name}; {result.stat().st_size:,} bytes.')
+```
+
+
+## `scripts/build_manifest.py`
+
+```python
+#!/usr/bin/env python3
+"""Generate trusted fixture manifest containing cryptographic hashes of project fixtures.
+Enforces deterministic content-hash verification instead of filename-based inference.
+"""
+import hashlib
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SAMPLES = ROOT / 'samples'
+WEB = ROOT / 'web'
+
+def hash_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+def build_manifest():
+    manifest = {
+        'schema_version': '1.0',
+        'description': 'Authoritative content hashes for HiperPulse deterministic synthetic fixtures',
+        'video_fixtures': {},
+        'trace_fixtures': {}
+    }
+
+    # Video fixtures in samples/
+    video_files = [
+        ('test_video_30s.webm', 30.0, 'Synthetic constant 30s WebM face pulse fixture (72 BPM)'),
+        ('test_video_12s.webm', 12.0, 'Synthetic short 12s WebM face pulse fixture (fails duration gate)'),
+        ('test_video_gapped.webm', 27.0, 'Synthetic 27s WebM face pulse fixture with 2s gap (fails continuity gate)'),
+        ('test_video_30s.mp4', 30.0, 'Synthetic constant 30s MP4 face pulse fixture (72 BPM)'),
+        ('test_video_12s.mp4', 12.0, 'Synthetic short 12s MP4 face pulse fixture')
+    ]
+
+    for fname, duration, desc in video_files:
+        fpath = SAMPLES / fname
+        if fpath.is_file():
+            sha = hash_file(fpath)
+            manifest['video_fixtures'][sha] = {
+                'fixture_id': fname,
+                'duration_seconds': duration,
+                'sha256': sha,
+                'size_bytes': fpath.stat().st_size,
+                'source': 'synthetic',
+                'description': desc
+            }
+
+    # Trace fixtures
+    trace_files = [
+        ('clean.json', 'Synthetic clean 72 BPM two-patch RGB trace (100% checks passed)'),
+        ('artifact.json', 'Synthetic artifact two-patch RGB trace (withheld estimate)'),
+        ('flat.json', 'Synthetic flat two-patch RGB trace (withheld estimate)')
+    ]
+
+    for fname, desc in trace_files:
+        fpath = SAMPLES / fname
+        if fpath.is_file():
+            data = json.loads(fpath.read_text(encoding='utf-8'))
+            # Compute canonical signal SHA
+            canonical = {
+                'timestamps': [round(float(t), 5) for t in data['timestamps']],
+                'left': [[round(float(v), 5) for v in row] for row in data['left']],
+                'right': [[round(float(v), 5) for v in row] for row in data['right']],
+                'clipping': [round(float(c), 5) for c in data.get('clipping', [])]
+            }
+            signal_sha = hashlib.sha256(
+                json.dumps(canonical, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+            ).hexdigest()
+            file_sha = hash_file(fpath)
+            manifest['trace_fixtures'][signal_sha] = {
+                'fixture_id': fname,
+                'file_sha256': file_sha,
+                'signal_sha256': signal_sha,
+                'source': 'synthetic',
+                'description': desc
+            }
+
+    out_json = json.dumps(manifest, indent=2, sort_keys=True)
+    (SAMPLES / 'trusted_fixtures.json').write_text(out_json, encoding='utf-8')
+    (WEB / 'trusted_fixtures.json').write_text(out_json, encoding='utf-8')
+    print(f"Generated trusted_fixtures.json with {len(manifest['video_fixtures'])} video fixtures and {len(manifest['trace_fixtures'])} trace fixtures.")
+    return manifest
+
+if __name__ == '__main__':
+    build_manifest()
 ```
 
 
@@ -962,6 +1056,8 @@ def main():
     generate_constant_video(SAMPLES / 'test_video_12s.mp4', duration=12.0, fps=30, codec='libx264')
 
     print("All video fixtures generated successfully.")
+    import runpy
+    runpy.run_path(str(ROOT / 'scripts' / 'build_manifest.py'), run_name='__main__')
 
 
 if __name__ == '__main__':
@@ -1183,6 +1279,11 @@ async function main() {
     await client.connect();
     console.log('✓ Connected via Chrome DevTools Protocol');
 
+    const DOWNLOAD_DIR = path.resolve(USER_DATA_DIR, 'downloads');
+    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+    try { await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR }); } catch {}
+    try { await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR, eventsEnabled: true }); } catch {}
+
     // Ensure the page is navigated to target URL and loaded
     await client.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
     await sleep(1500);
@@ -1314,21 +1415,55 @@ async function main() {
         if ((await client.eval(`$('status').textContent`)).includes('Analysis complete')) break;
       }
       const originalReceipt = await client.eval(`receipt`);
-      const originalTrace = await client.eval(`currentTrace`);
       const originalSignalHash = originalReceipt.signal_sha256;
 
-      // Reimport using native File and DataTransfer into #traceFile
-      await client.eval(`
-        (async () => {
-          $('consent').checked = true;
-          const jsonStr = ${JSON.stringify(JSON.stringify(originalTrace))};
-          const file = new File([jsonStr], 'reimport_trace.json', { type: 'application/json' });
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          $('traceFile').files = dt.files;
-          $('traceFile').dispatchEvent(new Event('change', { bubbles: true }));
-        })()
-      `);
+      // 1. Real browser download of trace via $('trace').click()
+      await client.eval(`$('trace').click()`);
+      const traceFilePath = path.join(DOWNLOAD_DIR, 'hiperpulse-trace.json');
+      let traceDownloaded = false;
+      for (let i = 0; i < 30; i++) {
+        await sleep(100);
+        if (fs.existsSync(traceFilePath)) {
+          traceDownloaded = true;
+          break;
+        }
+      }
+      if (!traceDownloaded) throw new Error('Trace file was not downloaded to disk');
+      const downloadedTraceRaw = fs.readFileSync(traceFilePath, 'utf8');
+      const downloadedTrace = JSON.parse(downloadedTraceRaw);
+      if (!Array.isArray(downloadedTrace.timestamps) || downloadedTrace.timestamps.length < 150) {
+        throw new Error('Downloaded trace file is malformed');
+      }
+
+      // 2. Real browser download of judge evidence card via $('evidenceCard').click()
+      await client.eval(`$('evidenceCard').click()`);
+      const cardFilePath = path.join(DOWNLOAD_DIR, 'hiperpulse-judge-evidence.json');
+      let cardDownloaded = false;
+      for (let i = 0; i < 30; i++) {
+        await sleep(100);
+        if (fs.existsSync(cardFilePath)) {
+          cardDownloaded = true;
+          break;
+        }
+      }
+      if (!cardDownloaded) throw new Error('Judge evidence card was not downloaded to disk');
+      const downloadedCardRaw = fs.readFileSync(cardFilePath, 'utf8');
+      const card = JSON.parse(downloadedCardRaw);
+      if (card.application !== 'HiperPulse' || card.algorithm !== 'green-evidence-1.1' ||
+          card.signal_sha256 !== originalSignalHash || card.bpm_estimate !== 72 ||
+          !Array.isArray(card.disclaimers) || card.disclaimers.length !== 3) {
+        throw new Error(`Judge evidence card validation failed: app=${card.application}, algo=${card.algorithm}`);
+      }
+
+      // 3. Clear session to guarantee reimport starts from blank state
+      await client.eval(`$('clear').click()`);
+      await sleep(150);
+
+      // 4. Reimport via real CDP DOM.setFileInputFiles on #traceFile
+      await client.eval(`$('consent').checked = true;`);
+      const doc = await client.send('DOM.getDocument');
+      const traceInput = await client.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#traceFile' });
+      await client.send('DOM.setFileInputFiles', { files: [traceFilePath], nodeId: traceInput.nodeId });
 
       for (let i = 0; i < 40; i++) {
         await sleep(100);
@@ -1336,8 +1471,10 @@ async function main() {
         if (st.includes('Analysis complete')) break;
       }
       const reimportedReceipt = await client.eval(`receipt`);
-      if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash && reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100) {
-        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72`);
+      if (reimportedReceipt && reimportedReceipt.signal_sha256 === originalSignalHash &&
+          reimportedReceipt.bpm === 72 && reimportedReceipt.quality_score === 100 &&
+          reimportedReceipt.ingestion === 'json_import') {
+        recordResult('T07', 'PASS', `signal_sha256=${originalSignalHash.slice(0, 12)}..., BPM=72, ingestion=json_import`);
       } else {
         recordResult('T07', 'FAIL', `receiptLoaded=${Boolean(reimportedReceipt)}, hashMatch=${reimportedReceipt?.signal_sha256 === originalSignalHash}`);
       }
@@ -1885,6 +2022,7 @@ def test_malformed_provider_shape_falls_back(monkeypatch,payload):
 import asyncio
 from copy import deepcopy
 import json
+from pathlib import Path
 import numpy as np
 import httpx
 import pytest
@@ -2214,14 +2352,111 @@ def test_each_of_fourteen_gates_individually_fails():
         d['right'][i] = [108.0, 108.0, 108.0]
     check_withheld(d, 'relative_signal_std')
 
-    # 9. patch_difference_bpm (> 8 BPM)
+    # 9. spectral_concentration (< 0.50)
     d = deepcopy(base)
     t = np.array(d['timestamps'])
-    # Patch 1 at 1.2 Hz (72 BPM), Patch 2 at 1.5 Hz (90 BPM) -> delta = 18 BPM
+    freqs = [0.8, 1.2, 1.6, 2.0, 2.4, 2.8]
+    multi_sine = sum(np.sin(2 * np.pi * f * t) for f in freqs)
+    g9 = 110.0 + 0.3 * multi_sine
+    d['left'] = np.column_stack([g9 * 0.9, g9, g9 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g9 * 0.9, g9, g9 * 0.75]).round(5).tolist()
+    check_withheld(d, 'spectral_concentration')
+
+    # 10. patch_difference_bpm (> 8 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
     p2 = np.sin(2 * np.pi * 1.5 * t)
     g2 = 108.0 + 1.5 * p2
     d['right'] = np.column_stack([g2 * 0.9, g2, g2 * 0.75]).round(5).tolist()
     check_withheld(d, 'patch_difference_bpm')
+
+    # 11. half_difference_bpm (> 10 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    half = len(t) // 2
+    p_first = np.sin(2 * np.pi * 1.2 * t[:half])
+    p_second = np.sin(2 * np.pi * 1.6 * t[half:])
+    g11 = np.concatenate([110.0 + 1.2 * p_first, 110.0 + 1.2 * p_second])
+    d['left'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()
+    check_withheld(d, 'half_difference_bpm')
+
+    # 12. estimator_difference_bpm (> 10 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    wave = np.sin(2 * np.pi * 0.75 * t) + 1.2 * np.sin(2 * np.pi * 1.5 * t)
+    g12 = 110.0 + 0.6 * wave
+    d['left'] = np.column_stack([g12 * 0.9, g12, g12 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g12 * 0.9, g12, g12 * 0.75]).round(5).tolist()
+    check_withheld(d, 'estimator_difference_bpm')
+
+    # 13. autocorrelation (< 0.45)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    wave13 = np.sin(2 * np.pi * (0.8 + 0.04 * t) * t)
+    g13 = 110.0 + 1.0 * wave13
+    d['left'] = np.column_stack([g13 * 0.9, g13, g13 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g13 * 0.9, g13, g13 * 0.75]).round(5).tolist()
+    check_withheld(d, 'autocorrelation')
+
+    # 14. search_boundary_bpm (< 45 or > 177 BPM)
+    d = deepcopy(base)
+    t = np.array(d['timestamps'])
+    p14 = np.sin(2 * np.pi * 0.72 * t)  # 0.72 Hz = 43.2 BPM < 45 BPM
+    g14 = 110.0 + 1.2 * p14
+    d['left'] = np.column_stack([g14 * 0.9, g14, g14 * 0.75]).round(5).tolist()
+    d['right'] = np.column_stack([g14 * 0.9, g14, g14 * 0.75]).round(5).tolist()
+    check_withheld(d, 'search_boundary_bpm')
+
+
+def test_truly_isolated_gates_single_failure_exact_score():
+    """Verify that the 5 truly orthogonal gates can fail in total isolation:
+    exactly 1 failing check, 13/14 passing, quality_score == 93%, with BPM withheld."""
+    base = sample('clean')
+    t = np.array(base['timestamps'])
+
+    def assert_isolated(modified, gate_name):
+        r = analyze(modified)
+        failed = [c['name'] for c in r['checks'] if not c['pass']]
+        assert failed == [gate_name], f"Expected only {gate_name} to fail, got {failed}"
+        assert r['quality_score'] == 93
+        assert r['bpm'] is None
+        assert r['status'] == 'insufficient_quality'
+        assert len(r['waveform']['seconds']) > 0
+        assert len(r['spectrum']['bpm']) > 0
+
+    # 1. duration_seconds
+    d1 = deepcopy(base)
+    for k in ('timestamps', 'left', 'right', 'clipping'):
+        d1[k] = d1[k][:450]
+    assert_isolated(d1, 'duration_seconds')
+
+    # 2. largest_gap_seconds
+    d2 = deepcopy(base)
+    d2['timestamps'][100] += 0.25
+    for i in range(101, len(d2['timestamps'])):
+        d2['timestamps'][i] += 0.25
+    assert_isolated(d2, 'largest_gap_seconds')
+
+    # 3. mean_green (preserving pulse wave so relative std and others pass)
+    d3 = deepcopy(base)
+    p = np.sin(2 * np.pi * 1.2 * t)
+    g = 15.0 + 0.3 * p
+    d3['left'] = np.column_stack([g * 0.9, g, g * 0.75]).round(5).tolist()
+    assert_isolated(d3, 'mean_green')
+
+    # 4. clipped_pixel_fraction
+    d4 = deepcopy(base)
+    d4['clipping'] = [0.10] * len(d4['clipping'])
+    assert_isolated(d4, 'clipped_pixel_fraction')
+
+    # 5. search_boundary_bpm
+    d5 = deepcopy(base)
+    p5 = np.sin(2 * np.pi * 0.72 * t)
+    g5 = 110.0 + 1.2 * p5
+    d5['left'] = np.column_stack([g5 * 0.9, g5, g5 * 0.75]).round(5).tolist()
+    d5['right'] = np.column_stack([g5 * 0.9, g5, g5 * 0.75]).round(5).tolist()
+    assert_isolated(d5, 'search_boundary_bpm')
 
 
 # ---------------------------------------------------------------------------
@@ -2422,6 +2657,221 @@ def test_challenge_a_continuity_rule_and_threshold():
     res = analyze(sample('clean'))
     gap_check = next(c for c in res['checks'] if c['name'] == 'largest_gap_seconds')
     assert gap_check['rule'] == '<= 0.2 s'
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Synthetic Fixture Provenance Regressions (Tests A - K)
+# ---------------------------------------------------------------------------
+
+def test_provenance_a_known_30s_webm_fixture_recognized():
+    """Test A: Known 30s WebM fixture recognized by content-hash in manifest."""
+    manifest_path = Path(__file__).resolve().parent.parent / 'samples' / 'trusted_fixtures.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    video_fixtures = manifest['video_fixtures']
+    entry = next(v for v in video_fixtures.values() if v['fixture_id'] == 'test_video_30s.webm')
+    assert entry['source'] == 'synthetic'
+    assert '72 BPM' in entry['description']
+    assert entry['duration_seconds'] == 30.0
+
+
+def test_provenance_b_renamed_known_fixture_retains_synthetic(tmp_path):
+    """Test B: Renamed known fixture (e.g. user_recording.webm) retains synthetic status via hash."""
+    from scripts.build_manifest import hash_file
+    root = Path(__file__).resolve().parent.parent
+    src = root / 'samples' / 'test_video_30s.webm'
+    dest = tmp_path / 'arbitrary_camera_name.webm'
+    dest.write_bytes(src.read_bytes())
+    sha = hash_file(dest)
+    manifest = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    assert sha in manifest['video_fixtures']
+    assert manifest['video_fixtures'][sha]['source'] == 'synthetic'
+
+
+def test_provenance_c_arbitrary_video_renamed_synthetic_demo_classified_as_video(tmp_path):
+    """Test C: Arbitrary video renamed to synthetic_demo.webm is NOT synthetic because hash is not in manifest."""
+    from scripts.build_manifest import hash_file
+    root = Path(__file__).resolve().parent.parent
+    manifest = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    fake_vid = tmp_path / 'synthetic_demo_recording.webm'
+    fake_vid.write_bytes(b'arbitrary video data not in manifest 1234567890')
+    sha = hash_file(fake_vid)
+    assert sha not in manifest['video_fixtures']
+
+
+def test_provenance_d_unknown_video_classified_as_unverified_origin():
+    """Test D: Unknown video classified as source='video', ingestion='local_video'."""
+    base = sample('clean')
+    base['source'] = 'video'
+    base['ingestion'] = 'local_video'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'video'
+    assert data['ingestion'] == 'local_video'
+
+
+def test_provenance_e_camera_trace_preserves_source_and_json_import():
+    """Test E: Camera-source trace export/import preserves 'camera' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'camera'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'camera'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_f_video_trace_preserves_source_and_json_import():
+    """Test F: Video-source trace export/import preserves 'video' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'video'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'video'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_g_synthetic_trace_preserves_source_and_json_import():
+    """Test G: Synthetic-source trace export/import preserves 'synthetic' and 'json_import'."""
+    base = sample('clean')
+    base['source'] = 'synthetic'
+    base['ingestion'] = 'json_import'
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['source'] == 'synthetic'
+    assert data['ingestion'] == 'json_import'
+
+
+def test_provenance_h_modified_samples_alter_signal_sha256():
+    """Test H: Modified numeric samples alter signal_sha256."""
+    base = sample('clean')
+    res1 = analyze(base)
+    mod = deepcopy(base)
+    mod['left'][10][1] += 0.5
+    res2 = analyze(mod)
+    assert res1['signal_sha256'] != res2['signal_sha256']
+
+
+def test_provenance_i_metadata_only_changes_preserve_signal_sha256():
+    """Test I: Metadata-only changes preserve signal_sha256."""
+    base = sample('clean')
+    base['source'] = 'camera'
+    base['ingestion'] = 'live_capture'
+    res1 = analyze(base)
+    mod = deepcopy(base)
+    mod['source'] = 'video'
+    mod['ingestion'] = 'json_import'
+    res2 = analyze(mod)
+    assert res1['signal_sha256'] == res2['signal_sha256']
+    assert res1['input_sha256'] != res2['input_sha256']
+
+
+def test_provenance_j_legacy_receipts_without_ingestion_compatible():
+    """Test J: Legacy receipts without ingestion field remain fully compatible."""
+    base = sample('clean')
+    if 'ingestion' in base:
+        del base['ingestion']
+    res = client.post('/api/analyze', json=base)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['ingestion'] == 'direct'
+    assert data['status'] == 'accepted_experimental'
+
+
+def test_provenance_k_manifest_generator_reproducibility():
+    """Test K: scripts/build_manifest.py generates valid, reproducible manifest in samples/ and web/."""
+    from scripts.build_manifest import build_manifest
+    manifest = build_manifest()
+    root = Path(__file__).resolve().parent.parent
+    samples_mf = json.loads((root / 'samples' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    web_mf = json.loads((root / 'web' / 'trusted_fixtures.json').read_text(encoding='utf-8'))
+    assert samples_mf == web_mf
+    assert len(manifest['video_fixtures']) == 5
+    assert len(manifest['trace_fixtures']) == 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Gemma Deadline, Concurrency & Security Tests
+# ---------------------------------------------------------------------------
+
+def test_gemma_transient_500_retry_success(monkeypatch):
+    """Test transient 500 error followed by successful retry within deadline budget."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+    monkeypatch.setattr(module, 'last_ai_call', 0)
+
+    call_count = 0
+    async def fake_retry_post(self, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(500, request=httpx.Request('POST', url))
+        return httpx.Response(200, request=httpx.Request('POST', url),
+            json={'candidates': [{'content': {'parts': [{'text': 'Retried explanation succeeded.'}]}}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', fake_retry_post)
+    r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+    assert r.status_code == 200
+    assert r.json()['provider'] == 'Gemma 4'
+    assert 'Retried explanation succeeded.' in r.json()['text']
+    assert call_count == 2
+
+
+def test_gemma_malformed_responses_fallback(monkeypatch):
+    """Test malformed responses fall back cleanly without altering measurement."""
+    import app.main as module
+    monkeypatch.setenv('GEMINI_API_KEY', 'mock-key')
+    monkeypatch.setenv('DEMO_TOKEN', 'test-token')
+
+    cases = [
+        {},
+        {'candidates': []},
+        {'candidates': [{'content': {'parts': []}}]},
+        {'candidates': [{'content': {'parts': [{'text': ''}]}}]},
+        {'candidates': [{'content': {'parts': [{'text': 'x' * 3500}]}}]},
+    ]
+
+    for body in cases:
+        monkeypatch.setattr(module, 'last_ai_call', 0)
+        async def fake_post(self, url, **kwargs):
+            return httpx.Response(200, request=httpx.Request('POST', url), json=body)
+        monkeypatch.setattr(httpx.AsyncClient, 'post', fake_post)
+
+        r = client.post('/api/explain', json=sample('clean'), headers={'X-Demo-Token': 'test-token'})
+        assert r.status_code == 200
+        res = r.json()
+        assert res['provider'] == 'deterministic'
+        assert 'Gemma unavailable' in res['reason']
+
+
+def test_gemma_concurrency_semaphore_bounded():
+    """Test that ai_semaphore is configured with bounded limit 2."""
+    from app.main import ai_semaphore
+    assert ai_semaphore._value <= 2
+
+
+def test_secrets_never_leaked_in_endpoints_or_cards(monkeypatch):
+    """Test that configured GEMINI_API_KEY never leaks in API endpoints, health, meta, or card data."""
+    secret = 'secret-canary-key-9876543210'
+    monkeypatch.setenv('GEMINI_API_KEY', secret)
+    monkeypatch.setenv('DEMO_TOKEN', 'canary-token')
+
+    r_health = client.get('/api/health')
+    assert secret not in r_health.text
+
+    r_meta = client.get('/api/meta')
+    assert secret not in r_meta.text
+
+    r_unauth = client.post('/api/explain', json=sample('clean'))
+    assert secret not in r_unauth.text
+
+    r_sample = client.get('/api/sample/clean')
+    assert secret not in r_sample.text
 ```
 
 
@@ -2812,12 +3262,34 @@ let capturing = false, busy = false, generation = 0, operation = 0, captureTimer
 let selectedVideo = false, videoUsable = false, selectedFileName = '';
 let previousSession = null, lastAiExplanation = null, activeChallenge = null;
 let buildMeta = { version: '1.1', algorithm: 'green-evidence-1.1', git_sha: 'unknown' };
+const TRUSTED_VIDEO_FIXTURES = {
+  '85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b': 'test_video_30s.webm',
+  'c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd': 'test_video_12s.webm',
+  '6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9': 'test_video_gapped.webm',
+  '4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84': 'test_video_30s.mp4',
+  '5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f': 'test_video_12s.mp4'
+};
+let selectedVideoFile = null, selectedVideoSha256 = null, selectedVideoSource = 'video';
+
+async function computeBlobSha256(blob) {
+  const buf = await blob.arrayBuffer();
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function initBuildMeta() {
   request('/api/health').then(h => {
     if (h && typeof h === 'object') {
       if (h.git_sha) buildMeta.git_sha = h.git_sha;
       if (h.version) buildMeta.version = h.version;
       if (h.algorithm) buildMeta.algorithm = h.algorithm;
+    }
+  }).catch(() => {});
+  fetch('/trusted_fixtures.json').then(r => r.ok ? r.json() : null).then(data => {
+    if (data && data.video_fixtures) {
+      for (const [sha, info] of Object.entries(data.video_fixtures)) {
+        TRUSTED_VIDEO_FIXTURES[sha] = info.fixture_id;
+      }
     }
   }).catch(() => {});
 }
@@ -2961,7 +3433,15 @@ function getRetakeAdvice(checks) {
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
-  $('source').textContent = r.source === 'synthetic' ? 'SYNTHETIC DEMO · NOT A PERSON' : `${r.source.toUpperCase()} · EXPERIMENTAL`;
+  if (r.source === 'synthetic' || r.source === 'sample') {
+    $('source').textContent = 'SYNTHETIC DEMO · NOT A PERSON';
+  } else if (r.source === 'video') {
+    $('source').textContent = 'LOCAL VIDEO (UNVERIFIED ORIGIN) · EXPERIMENTAL';
+  } else if (r.source === 'camera') {
+    $('source').textContent = 'LIVE CAMERA · EXPERIMENTAL';
+  } else {
+    $('source').textContent = `${(r.source || 'UNKNOWN').toUpperCase()} · EXPERIMENTAL`;
+  }
   $('decision').textContent = r.bpm === null ? 'Estimate withheld. Inspect the failed checks below.' : 'Heuristic checks passed. Biological origin and accuracy are unverified.';
   $('checks').replaceChildren();
   for (const check of r.checks) {
@@ -3071,17 +3551,26 @@ $('file').onchange=async e=>{
   stopMedia();blank();const file=e.target.files[0];if(!file)return;
   selectedFileName=file.name||'';
   if(file.size>50*1024*1024){status('Video exceeds 50 MB. Use a shorter recording.');return;}
+  selectedVideoFile=file;
+  try{
+    selectedVideoSha256=await computeBlobSha256(file);
+    const isFixture=Boolean(TRUSTED_VIDEO_FIXTURES[selectedVideoSha256]);
+    selectedVideoSource=isFixture?'synthetic':'video';
+  }catch(_err){
+    selectedVideoSha256=null;
+    selectedVideoSource='video';
+  }
   localUrl=URL.createObjectURL(file);selectedVideo=true;video.src=localUrl;
   video.onloadedmetadata=()=>{
     videoUsable=Number.isFinite(video.duration)&&video.duration>=10&&video.duration<=60;
-    status(videoUsable?'Preview alignment, then process. The first 30 seconds are used.':'Use a browser-decodable video with a duration of 10–60 seconds.');controls();
+    const originLabel=selectedVideoSource==='synthetic'?'synthetic fixture':'local video (unverified origin)';
+    status(videoUsable?`Preview alignment, then process (${originLabel}). The first 30 seconds are used.`:'Use a browser-decodable video with a duration of 10–60 seconds.');controls();
   };
   video.onerror=()=>{stopMedia();status('Video could not be decoded. Try MP4/H.264 or a supported WebM, or use sample mode.');};
 };
 $('processVideo').onclick=async()=>{
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
-  const isSynthetic=/^(test_video|synthetic|fixture)/i.test(selectedFileName)||/synthetic/i.test(selectedFileName);
-  try{video.currentTime=0;await video.play();capture(isSynthetic?'synthetic':'video');}catch(e){status(e.message);}
+  try{video.currentTime=0;await video.play();capture(selectedVideoSource||'video');}catch(e){status(e.message);}
 };
 $('traceFile').onchange=async e=>{
   stopMedia();blank();const f=e.target.files[0];if(!f)return;
@@ -3112,7 +3601,8 @@ if ($('evidenceCard')) {
       timestamp_utc: new Date().toISOString(),
       declared_source: receipt.source,
       ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
-      is_synthetic: receipt.source === 'synthetic',
+      is_synthetic: receipt.source === 'synthetic' || receipt.source === 'sample',
+      unverified_origin: receipt.source === 'video',
       signal_sha256: receipt.signal_sha256 || null,
       input_sha256: receipt.input_sha256 || null,
       sample_count: currentTrace?.timestamps?.length || receipt.waveform?.seconds?.length || 0,
@@ -3318,4 +3808,79 @@ controls();
 
 ```css
 :root{color-scheme:dark;--bg:#0c1416;--panel:#142125;--line:#2b4247;--text:#e5eeec;--muted:#a8bcba;--mint:#8ae8c4;--amber:#f1cc8b}*{box-sizing:border-box}body{margin:0;background:var(--bg);font:16px/1.6 system-ui,sans-serif;color:var(--text)}header{max-width:1360px;margin:auto;padding:26px 5%;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.brand{color:var(--text);font-size:23px;font-weight:750;text-decoration:none}.badge,.eyebrow{font-size:12px;letter-spacing:2px;color:var(--mint)}.badge{border:1px solid var(--line);border-radius:30px;padding:6px 12px}main{max-width:1360px;margin:auto;padding:30px 5%}.intro{max-width:790px;margin-bottom:32px}h1{font-size:clamp(42px,6vw,72px);line-height:1.06;letter-spacing:-3px;margin:16px 0 22px}em{color:var(--mint);font-style:normal}.intro>p{max-width:680px}.warning{font-size:13px;color:var(--amber);border-left:2px solid var(--amber);padding-left:14px}.layout{display:grid;grid-template-columns:1fr 1.16fr;gap:24px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);padding:26px;border-radius:20px}h2{font-size:19px;margin:0 0 16px}h3{font-size:15px;margin:24px 0 9px}p{color:var(--muted);margin:10px 0 18px}.buttons{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}button{font:inherit;font-size:13px;font-weight:650;border:1px solid var(--mint);background:var(--mint);color:#102821;border-radius:9px;padding:11px 14px;cursor:pointer}button.secondary{background:transparent;color:var(--text);border-color:#55736f}button:hover:not(:disabled){filter:brightness(1.12)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--amber);outline-offset:3px}.capture{position:relative;background:#080e10;border-radius:12px;overflow:hidden;min-height:210px;aspect-ratio:4/3;margin:22px 0 12px}video{display:block;width:100%;height:100%;object-fit:fill}.guide{position:absolute;inset:0;pointer-events:none}.roi{position:absolute;top:48%;width:12%;height:12%;border:2px dashed var(--mint);background:#8ae8c411}.roi.left{left:32%}.roi.right{left:56%}.hint,.axis{font-size:12px}.axis{margin:4px 0 18px;color:#8da8a4}.consent{display:flex;align-items:start;gap:9px;font-size:13px;margin:18px 0;color:var(--muted)}input[type=checkbox]{margin-top:6px;accent-color:var(--mint)}label{display:block;font-size:13px;color:var(--muted)}input[type=file]{max-width:100%;display:block;margin:8px 0 18px}input[type=password]{display:block;background:#0b171a;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px;width:100%;margin:7px 0 14px}.metrics{display:flex;justify-content:space-between;gap:20px;margin-top:25px}.number{font-size:70px;font-weight:700;letter-spacing:-3px;line-height:1.1;color:var(--mint)}.number.small{font-size:45px}.unit{display:block;color:var(--muted);font-size:12px}canvas{display:block;width:100%;background:#0d191c;border-radius:8px}details{border-top:1px solid var(--line);padding-top:15px;margin-top:16px}summary{cursor:pointer;font-size:13px}.check{border-bottom:1px solid var(--line);padding:12px 0;font-size:12px}.pass{color:var(--mint)}.fail{color:var(--amber)}#status{font-size:13px;color:var(--mint);min-height:42px}#explanation,#comparison{font-size:13px;white-space:pre-wrap}footer{padding:36px 0;color:#8da8a4;font-size:12px;max-width:850px}@media(max-width:850px){.layout{grid-template-columns:1fr}.panel{padding:20px}header{gap:12px}.badge{font-size:9px}.number{font-size:58px}}
+```
+
+
+## `web/trusted_fixtures.json`
+
+```json
+{
+  "description": "Authoritative content hashes for HiperPulse deterministic synthetic fixtures",
+  "schema_version": "1.0",
+  "trace_fixtures": {
+    "1d941441ef89dcabf5b6602a1ac614f5ff7292d8a8cff6e4d1a132a6cec613e3": {
+      "description": "Synthetic artifact two-patch RGB trace (withheld estimate)",
+      "file_sha256": "e286b1d2ef7b5f1485e4c28249ee5cc214ff9ede1d75fe603e597de61d95dba6",
+      "fixture_id": "artifact.json",
+      "signal_sha256": "1d941441ef89dcabf5b6602a1ac614f5ff7292d8a8cff6e4d1a132a6cec613e3",
+      "source": "synthetic"
+    },
+    "78c33dfbe0e69506a025ef6d768af6d689b26a393ff0b9ddd32757514df7cc2b": {
+      "description": "Synthetic flat two-patch RGB trace (withheld estimate)",
+      "file_sha256": "1fda77a52c006fd6f0ca515a1fd501c477a0f6c818e2b51cb803a5bc229a6926",
+      "fixture_id": "flat.json",
+      "signal_sha256": "78c33dfbe0e69506a025ef6d768af6d689b26a393ff0b9ddd32757514df7cc2b",
+      "source": "synthetic"
+    },
+    "b7d393a59c962b5161ab9d96b5a0a5e7c02803cec24b49496d2987d01632cf29": {
+      "description": "Synthetic clean 72 BPM two-patch RGB trace (100% checks passed)",
+      "file_sha256": "fa860441490276c032641ce5901eda45d3aa3ce9d80f388fde7e1aee865cd536",
+      "fixture_id": "clean.json",
+      "signal_sha256": "b7d393a59c962b5161ab9d96b5a0a5e7c02803cec24b49496d2987d01632cf29",
+      "source": "synthetic"
+    }
+  },
+  "video_fixtures": {
+    "4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84": {
+      "description": "Synthetic constant 30s MP4 face pulse fixture (72 BPM)",
+      "duration_seconds": 30.0,
+      "fixture_id": "test_video_30s.mp4",
+      "sha256": "4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84",
+      "size_bytes": 53238,
+      "source": "synthetic"
+    },
+    "5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f": {
+      "description": "Synthetic short 12s MP4 face pulse fixture",
+      "duration_seconds": 12.0,
+      "fixture_id": "test_video_12s.mp4",
+      "sha256": "5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f",
+      "size_bytes": 22425,
+      "source": "synthetic"
+    },
+    "6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9": {
+      "description": "Synthetic 27s WebM face pulse fixture with 2s gap (fails continuity gate)",
+      "duration_seconds": 27.0,
+      "fixture_id": "test_video_gapped.webm",
+      "sha256": "6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9",
+      "size_bytes": 60387,
+      "source": "synthetic"
+    },
+    "85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b": {
+      "description": "Synthetic constant 30s WebM face pulse fixture (72 BPM)",
+      "duration_seconds": 30.0,
+      "fixture_id": "test_video_30s.webm",
+      "sha256": "85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b",
+      "size_bytes": 82797,
+      "source": "synthetic"
+    },
+    "c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd": {
+      "description": "Synthetic short 12s WebM face pulse fixture (fails duration gate)",
+      "duration_seconds": 12.0,
+      "fixture_id": "test_video_12s.webm",
+      "sha256": "c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd",
+      "size_bytes": 31032,
+      "source": "synthetic"
+    }
+  }
+}
 ```

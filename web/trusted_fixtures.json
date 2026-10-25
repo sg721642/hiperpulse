@@ -1,0 +1,69 @@
+{
+  "description": "Authoritative content hashes for HiperPulse deterministic synthetic fixtures",
+  "schema_version": "1.0",
+  "trace_fixtures": {
+    "1d941441ef89dcabf5b6602a1ac614f5ff7292d8a8cff6e4d1a132a6cec613e3": {
+      "description": "Synthetic artifact two-patch RGB trace (withheld estimate)",
+      "file_sha256": "e286b1d2ef7b5f1485e4c28249ee5cc214ff9ede1d75fe603e597de61d95dba6",
+      "fixture_id": "artifact.json",
+      "signal_sha256": "1d941441ef89dcabf5b6602a1ac614f5ff7292d8a8cff6e4d1a132a6cec613e3",
+      "source": "synthetic"
+    },
+    "78c33dfbe0e69506a025ef6d768af6d689b26a393ff0b9ddd32757514df7cc2b": {
+      "description": "Synthetic flat two-patch RGB trace (withheld estimate)",
+      "file_sha256": "1fda77a52c006fd6f0ca515a1fd501c477a0f6c818e2b51cb803a5bc229a6926",
+      "fixture_id": "flat.json",
+      "signal_sha256": "78c33dfbe0e69506a025ef6d768af6d689b26a393ff0b9ddd32757514df7cc2b",
+      "source": "synthetic"
+    },
+    "b7d393a59c962b5161ab9d96b5a0a5e7c02803cec24b49496d2987d01632cf29": {
+      "description": "Synthetic clean 72 BPM two-patch RGB trace (100% checks passed)",
+      "file_sha256": "fa860441490276c032641ce5901eda45d3aa3ce9d80f388fde7e1aee865cd536",
+      "fixture_id": "clean.json",
+      "signal_sha256": "b7d393a59c962b5161ab9d96b5a0a5e7c02803cec24b49496d2987d01632cf29",
+      "source": "synthetic"
+    }
+  },
+  "video_fixtures": {
+    "4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84": {
+      "description": "Synthetic constant 30s MP4 face pulse fixture (72 BPM)",
+      "duration_seconds": 30.0,
+      "fixture_id": "test_video_30s.mp4",
+      "sha256": "4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84",
+      "size_bytes": 53238,
+      "source": "synthetic"
+    },
+    "5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f": {
+      "description": "Synthetic short 12s MP4 face pulse fixture",
+      "duration_seconds": 12.0,
+      "fixture_id": "test_video_12s.mp4",
+      "sha256": "5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f",
+      "size_bytes": 22425,
+      "source": "synthetic"
+    },
+    "6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9": {
+      "description": "Synthetic 27s WebM face pulse fixture with 2s gap (fails continuity gate)",
+      "duration_seconds": 27.0,
+      "fixture_id": "test_video_gapped.webm",
+      "sha256": "6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9",
+      "size_bytes": 60387,
+      "source": "synthetic"
+    },
+    "85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b": {
+      "description": "Synthetic constant 30s WebM face pulse fixture (72 BPM)",
+      "duration_seconds": 30.0,
+      "fixture_id": "test_video_30s.webm",
+      "sha256": "85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b",
+      "size_bytes": 82797,
+      "source": "synthetic"
+    },
+    "c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd": {
+      "description": "Synthetic short 12s WebM face pulse fixture (fails duration gate)",
+      "duration_seconds": 12.0,
+      "fixture_id": "test_video_12s.webm",
+      "sha256": "c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd",
+      "size_bytes": 31032,
+      "source": "synthetic"
+    }
+  }
+}

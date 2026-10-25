@@ -116,6 +116,8 @@ def main():
     generate_constant_video(SAMPLES / 'test_video_12s.mp4', duration=12.0, fps=30, codec='libx264')
 
     print("All video fixtures generated successfully.")
+    import runpy
+    runpy.run_path(str(ROOT / 'scripts' / 'build_manifest.py'), run_name='__main__')
 
 
 if __name__ == '__main__':

@@ -46,7 +46,7 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
   - Full Python suite: **46 / 46 passing in 4.01s** (`.venv/bin/python -m pytest`).
   - Browser Acceptance Suite: **17 / 17 checks passing** in headless Brave via CDP (`scripts/test_browser_acceptance.js`).
   - Demo password rotated to secure randomly generated secret in `.env` and server daemon restarted (`task-1010`).
-  - Local Docker readiness audit completed: `docker` CLI not installed on host machine; Dockerfile multi-stage non-root container and `.dockerignore` context statically verified.
+  - Local Docker readiness audit completed: `docker` CLI not installed on host machine; Dockerfile single-stage non-root container and `.dockerignore` context statically verified.
   - DigitalOcean App Platform spec created (`deploy/digitalocean/app.yaml`) and deployment guide documented (`docs/DEPLOYMENT_DIGITALOCEAN.md`).
   - Release gates established:
 - **Independent Audit Remediation & Evidence Features (F01–F11):** VERIFIED.
@@ -68,7 +68,16 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - Corrected Challenge A continuity rule to `<= 0.20 s` and refactored explanations to dynamic receipt analysis.
     - Implemented dashed amber plot overlays (`plotOverlay`) for original vs challenge visual comparison.
     - Solved CI collection failure via `pythonpath = .` and expanded `.github/workflows/ci.yml` into 3 jobs: `test`, `browser-acceptance`, and `docker-smoke`.
-  - **Automated Test Status:** **62 / 62 Python tests passing** in 4.96s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
+  - **Milestone G (Technical Hardening & Pre-UI Verification Completion):** VERIFIED.
+    - Eliminated all filename regex matching (`/^(test_video|synthetic|fixture)/i`).
+    - Implemented cryptographic SHA-256 fixture manifest (`scripts/build_manifest.py`, `samples/trusted_fixtures.json`, `web/trusted_fixtures.json`) for deterministic synthetic attribution. Unknown local videos classified as `LOCAL VIDEO (UNVERIFIED ORIGIN) · EXPERIMENTAL` (`source: 'video'`, `ingestion: 'local_video'`).
+    - Added 11 mandatory regression tests A through K in `tests/test_audit_remediation.py`.
+    - Parameterized all 14 quality gates in `app/signal.py`, validating isolated gates (`duration_seconds`, `largest_gap_seconds`, `mean_green`, `clipped_pixel_fraction`, `search_boundary_bpm`) with exact 93% score and coupled gates.
+    - Upgraded browser acceptance test T07: real browser download of trace and judge evidence card to disk, reading and validating downloaded bytes from filesystem, reimport via native CDP `DOM.setFileInputFiles`, and asserting round-trip signal hash invariance (`signal_sha256`) and `ingestion: 'json_import'`. Verified negative timeout regression (`TEST_NEGATIVE_TIMEOUT=1`).
+    - Added fault-injection & security tests for Gemma deadline budget, transient 500 retry, malformed responses, Semaphore(2) concurrency bounding, and unauthenticated 401 gate. Confirmed zero API key leakage.
+    - Reconciled documentation: Node 22 LTS CI / Node 20+ runtime compatibility, single-stage slim Docker image, qualified DigitalOcean hosting estimates, tier-dependent Gemini quotas, process-local cooldown vs cloud budget alerts, and heuristic pass percentage quality score.
+    - Validated package reproducibility with `scripts/build_bundle.py` and extracted `HiperPulse_Implementation_Kit.zip`, running all 78 tests cleanly with zero leaked secrets.
+  - **Automated Test Status:** **78 / 78 Python tests passing** in 5.98s; **17 / 17 browser acceptance tests passing** in headless Brave via CDP.
 
 ## Scope and implementation
 
@@ -77,9 +86,8 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 ## Git Status
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
-- Working branch: `remediation/audit-hardening`.
-- Base commit: `06ec6c7cdefa54520fe020f7f0e8faeffe725432`.
-- Audit remediation & hardening changes staged/committed across Python signal engine, API models, web frontend, CI workflows, and documentation.
+- Working branch: `main` / `remediation/audit-hardening`.
+- All technical fixes and verification gaps completed and verified.
 
 ## Mandatory Release Gates
 
@@ -89,4 +97,4 @@ Complete local source: Python/FastAPI/SciPy backend; fixed-patch browser camera/
 
 ## Immediate Next Smallest Task
 
-Hard stop at Frontend Visual Customization Checkpoint. Present the final audit remediation and evidence features report to the project owner and request their visual styling requirements and design preferences before proceeding to deployment.
+Hard stop at Frontend Visual Customization Checkpoint. Present the completed pre-UI technical hardening and verification report to the project owner and request their visual styling requirements and design preferences before proceeding to deployment.

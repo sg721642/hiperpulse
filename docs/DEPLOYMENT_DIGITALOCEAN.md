@@ -25,15 +25,14 @@ Prepared for **HiperPulse — Experimental Camera Heart Rate**.
 ## 2. Infrastructure & Operating Costs
 
 ### DigitalOcean App Platform Costs
-- **Recommended Plan:** `basic-xxs` (512 MB RAM, 1 shared vCPU) at **$5.00 / month** (billed hourly at ~$0.007/hr).
-- **Alternative Plan:** `basic-xs` (1 GB RAM, 1 shared vCPU) at **$12.00 / month** if memory overhead increases during high-concurrency scipy signal filtering.
-- **Estimated Hack-Day / Demo Duration Cost:** Less than **$0.50** for 48 hours of testing.
+- **Estimated Plan:** `basic-xxs` (512 MB RAM, 1 shared vCPU) or `basic-xs` (1 GB RAM, 1 shared vCPU). Actual pricing depends on region, bandwidth, and current DigitalOcean pricing at deployment time; verify in the App Platform control panel before launch.
+- **Billing Model:** Billed hourly for active container uptime. Containers can be destroyed immediately after evaluation to minimize charges.
 
 ### Google Gemini API Costs (Gemma 4)
 - **Model:** `gemma-4-26b-a4b-it`
-- **Free Tier / Pay-As-You-Go:** Up to 15 Requests Per Minute (RPM) free tier on Google AI Studio; standard token-based pricing thereafter.
+- **Quota & Billing:** Quotas and pricing depend on account tier (Google AI Studio free tier vs pay-as-you-go / Google Cloud enterprise). Verify active RPM/TPM and billing budget alerts in Google AI Studio / Google Cloud Console.
 - **Token Usage per Call:** Input prompt ~350 tokens; output reasoning + text ~1200–2000 tokens.
-- **Cost Cap Protection:** Server-side in-memory cooldown enforces minimum 10 seconds between calls, preventing runaway billings.
+- **In-Memory Cooldown:** The server-side 10-second cooldown is process-local to a single container instance; it guards against rapid sequential clicks within a process but is not a distributed multi-instance billing cap.
 
 ---
 

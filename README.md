@@ -11,7 +11,7 @@ Camera recording / local video / synthetic sample / JSON trace → timestamped t
 ## Prerequisites
 
 - **Python:** 3.12+ (tested on Python 3.12.15)
-- **Node.js:** v20+ LTS (for JavaScript syntax check and automated browser acceptance runner)
+- **Node.js:** Node 20+ runtime compatible (CI uses Node 22 LTS; for syntax checks and automated browser acceptance runner)
 - **Chromium-based Browser:** Brave, Google Chrome, or Chromium (configurable via `BROWSER_BIN`)
 
 ## Quick Start (macOS / Linux)

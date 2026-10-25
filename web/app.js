@@ -6,12 +6,34 @@ let capturing = false, busy = false, generation = 0, operation = 0, captureTimer
 let selectedVideo = false, videoUsable = false, selectedFileName = '';
 let previousSession = null, lastAiExplanation = null, activeChallenge = null;
 let buildMeta = { version: '1.1', algorithm: 'green-evidence-1.1', git_sha: 'unknown' };
+const TRUSTED_VIDEO_FIXTURES = {
+  '85ce6f205e0ce40338824baeccf5c33902b7d797ac8acc0569340e70d480136b': 'test_video_30s.webm',
+  'c52c2f5a71d6d94a209d860914a8893c95233264ccaef15b8e31f97a18a26cdd': 'test_video_12s.webm',
+  '6c6853df26c7a972e23a0d19879868e1daca147b910e8b644c1927b286b98eb9': 'test_video_gapped.webm',
+  '4eb5d0c505cf8c4f79fc2be0157639209527cb51c6346aa9d75c0df969d71a84': 'test_video_30s.mp4',
+  '5e43cb432ac447a9d1795cc57a3a69e25c6b6cf25a3f077670419c05ff862f4f': 'test_video_12s.mp4'
+};
+let selectedVideoFile = null, selectedVideoSha256 = null, selectedVideoSource = 'video';
+
+async function computeBlobSha256(blob) {
+  const buf = await blob.arrayBuffer();
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function initBuildMeta() {
   request('/api/health').then(h => {
     if (h && typeof h === 'object') {
       if (h.git_sha) buildMeta.git_sha = h.git_sha;
       if (h.version) buildMeta.version = h.version;
       if (h.algorithm) buildMeta.algorithm = h.algorithm;
+    }
+  }).catch(() => {});
+  fetch('/trusted_fixtures.json').then(r => r.ok ? r.json() : null).then(data => {
+    if (data && data.video_fixtures) {
+      for (const [sha, info] of Object.entries(data.video_fixtures)) {
+        TRUSTED_VIDEO_FIXTURES[sha] = info.fixture_id;
+      }
     }
   }).catch(() => {});
 }
@@ -155,7 +177,15 @@ function getRetakeAdvice(checks) {
 function render(r) {
   $('bpm').textContent = r.bpm ?? '—';
   $('quality').textContent = `${r.quality_score}%`;
-  $('source').textContent = r.source === 'synthetic' ? 'SYNTHETIC DEMO · NOT A PERSON' : `${r.source.toUpperCase()} · EXPERIMENTAL`;
+  if (r.source === 'synthetic' || r.source === 'sample') {
+    $('source').textContent = 'SYNTHETIC DEMO · NOT A PERSON';
+  } else if (r.source === 'video') {
+    $('source').textContent = 'LOCAL VIDEO (UNVERIFIED ORIGIN) · EXPERIMENTAL';
+  } else if (r.source === 'camera') {
+    $('source').textContent = 'LIVE CAMERA · EXPERIMENTAL';
+  } else {
+    $('source').textContent = `${(r.source || 'UNKNOWN').toUpperCase()} · EXPERIMENTAL`;
+  }
   $('decision').textContent = r.bpm === null ? 'Estimate withheld. Inspect the failed checks below.' : 'Heuristic checks passed. Biological origin and accuracy are unverified.';
   $('checks').replaceChildren();
   for (const check of r.checks) {
@@ -265,17 +295,26 @@ $('file').onchange=async e=>{
   stopMedia();blank();const file=e.target.files[0];if(!file)return;
   selectedFileName=file.name||'';
   if(file.size>50*1024*1024){status('Video exceeds 50 MB. Use a shorter recording.');return;}
+  selectedVideoFile=file;
+  try{
+    selectedVideoSha256=await computeBlobSha256(file);
+    const isFixture=Boolean(TRUSTED_VIDEO_FIXTURES[selectedVideoSha256]);
+    selectedVideoSource=isFixture?'synthetic':'video';
+  }catch(_err){
+    selectedVideoSha256=null;
+    selectedVideoSource='video';
+  }
   localUrl=URL.createObjectURL(file);selectedVideo=true;video.src=localUrl;
   video.onloadedmetadata=()=>{
     videoUsable=Number.isFinite(video.duration)&&video.duration>=10&&video.duration<=60;
-    status(videoUsable?'Preview alignment, then process. The first 30 seconds are used.':'Use a browser-decodable video with a duration of 10–60 seconds.');controls();
+    const originLabel=selectedVideoSource==='synthetic'?'synthetic fixture':'local video (unverified origin)';
+    status(videoUsable?`Preview alignment, then process (${originLabel}). The first 30 seconds are used.`:'Use a browser-decodable video with a duration of 10–60 seconds.');controls();
   };
   video.onerror=()=>{stopMedia();status('Video could not be decoded. Try MP4/H.264 or a supported WebM, or use sample mode.');};
 };
 $('processVideo').onclick=async()=>{
   if(!$('consent').checked){status('Please accept trace processing first.');return;}
-  const isSynthetic=/^(test_video|synthetic|fixture)/i.test(selectedFileName)||/synthetic/i.test(selectedFileName);
-  try{video.currentTime=0;await video.play();capture(isSynthetic?'synthetic':'video');}catch(e){status(e.message);}
+  try{video.currentTime=0;await video.play();capture(selectedVideoSource||'video');}catch(e){status(e.message);}
 };
 $('traceFile').onchange=async e=>{
   stopMedia();blank();const f=e.target.files[0];if(!f)return;
@@ -306,7 +345,8 @@ if ($('evidenceCard')) {
       timestamp_utc: new Date().toISOString(),
       declared_source: receipt.source,
       ingestion_method: currentTrace?.ingestion || receipt.ingestion || 'direct',
-      is_synthetic: receipt.source === 'synthetic',
+      is_synthetic: receipt.source === 'synthetic' || receipt.source === 'sample',
+      unverified_origin: receipt.source === 'video',
       signal_sha256: receipt.signal_sha256 || null,
       input_sha256: receipt.input_sha256 || null,
       sample_count: currentTrace?.timestamps?.length || receipt.waveform?.seconds?.length || 0,

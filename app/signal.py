@@ -128,7 +128,7 @@ def analyze(data):
     stride = max(1, int(np.ceil(len(grid)/600)))
     display = wave / max(float(np.std(wave)), 1e-12)
     return {'schema_version':1, 'algorithm':VERSION, 'source':data['source'],
-            'ingestion':data.get('ingestion', 'direct'),
+            'ingestion':data.get('ingestion') or 'direct',
             'input_sha256':digest, 'signal_sha256':signal_digest,
             'exposure_metrics':{'patch1_mean':round(patch1_mean, 4), 'patch2_mean':round(patch2_mean, 4),
                                 'min_mean':round(min_light, 4), 'max_mean':round(max_light, 4)},

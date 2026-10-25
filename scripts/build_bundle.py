@@ -4,6 +4,7 @@ import zipfile
 import runpy
 
 root=Path(__file__).resolve().parent.parent
+runpy.run_path(str(root/'scripts'/'build_manifest.py'),run_name='__main__')
 root_files=['START_HERE.md','README.md','MASTER_IMPLEMENTATION.md','AGENTS.md',
             'THIRD_PARTY_NOTICES.md','LICENSE','requirements.txt','requirements-lock.txt',
             'pytest.ini','.env.example','.gitignore','Dockerfile','.dockerignore']
