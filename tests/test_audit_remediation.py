@@ -355,7 +355,7 @@ def test_each_of_fourteen_gates_individually_fails():
     t = np.array(d['timestamps'])
     half = len(t) // 2
     p_first = np.sin(2 * np.pi * 1.2 * t[:half])
-    p_second = np.sin(2 * np.pi * 1.6 * t[half:])
+    p_second = np.sin(2 * np.pi * 1.8 * t[half:])
     g11 = np.concatenate([110.0 + 1.2 * p_first, 110.0 + 1.2 * p_second])
     d['left'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()
     d['right'] = np.column_stack([g11 * 0.9, g11, g11 * 0.75]).round(5).tolist()

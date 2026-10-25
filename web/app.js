@@ -155,10 +155,27 @@ function blank() {
 }
 async function request(path, data, headers = {}) {
   const timeoutMs = path === '/api/explain' ? 95000 : 30000;
-  const response = await fetch(path, {method:data ? 'POST':'GET',
-    headers:{'Content-Type':'application/json',...headers},
-    body:data ? JSON.stringify(data):undefined, signal:AbortSignal.timeout(timeoutMs)});
-  const body = await response.json();
+  let response;
+  try {
+    response = await fetch(path, {method:data ? 'POST':'GET',
+      headers:{'Content-Type':'application/json',...headers},
+      body:data ? JSON.stringify(data):undefined, signal:AbortSignal.timeout(timeoutMs)});
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and retry.');
+    }
+    throw new Error('Network connection error. Please retry.');
+  }
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    if (!response.ok) {
+      throw new Error(`Server connection error (${response.status}). Please retry in a moment.`);
+    }
+    throw new Error('Unexpected response format from server. Please refresh the page.');
+  }
   if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Invalid input. Check the trace format and sample lengths.');
   return body;
 }
@@ -287,7 +304,7 @@ function getRetakeAdvice(checks) {
   else if (failedNames.has('color_jump_proxy') || failedNames.has('relative_signal_std') || failedNames.has('spectral_concentration') || failedNames.has('autocorrelation')) {
     category = 'stability';
     if (!failedNames.has('color_jump_proxy') && (failedNames.has('spectral_concentration') || failedNames.has('autocorrelation'))) {
-      primary = 'Frequency evidence is diffuse across multiple peaks or cycle-to-cycle periodicity is low (spectral concentration < 0.50 or autocorrelation < 0.45). A stable repeating pulse could not be isolated from background sensor noise. Ensure steady, indirect front lighting across both cheeks, rest your chin to eliminate micro-motion, and confirm bare cheek skin fills both guide boxes.';
+      primary = 'Frequency evidence is diffuse across multiple peaks or cycle-to-cycle periodicity is low (spectral concentration < 0.40 or autocorrelation < 0.15). A stable repeating pulse could not be isolated from background sensor noise. Ensure steady, indirect front lighting across both cheeks, rest your chin to eliminate micro-motion, and confirm bare cheek skin fills both guide boxes.';
     } else {
       primary = 'Minimize movement: Keep your face and head completely stationary. Rest your chin or sit comfortably, breathe naturally, and avoid speaking, smiling, or sudden movements during the 30-second capture.';
     }
@@ -471,6 +488,10 @@ async function runTrace(trace) {
   try { const result=await request('/api/analyze',trace);
     if(op!==operation)return;
     currentTrace=trace;receipt=result;render(result);status('Analysis complete. Review the input label and quality checks.');
+    if (window.innerWidth <= 900) {
+      const resPanel = document.querySelector('.panel.result') || $('lab');
+      if (resPanel) setTimeout(() => resPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
   } catch(e){if(op===operation)status(e.message);}
   finally{if(op===operation){busy=false;controls();}}
 }
@@ -1422,7 +1443,7 @@ function initScrollMotionEngine() {
   document.documentElement.classList.add('motion-engine-active');
 
   const targets = document.querySelectorAll(
-    '.panel, .method-step-card, .challenge-card, .ai-section, .plot-group, .site-footer, .hero-centerpiece'
+    '.method-step-card, .challenge-card, .site-footer'
   );
 
   const observer = new IntersectionObserver((entries, obs) => {

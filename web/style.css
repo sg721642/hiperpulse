@@ -2203,3 +2203,11 @@ html.motion-engine-active .stagger-5 { transition-delay: 0.40s; }
   }
 }
 
+@media (max-width: 900px) {
+  html.motion-engine-active .reveal-on-scroll {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
