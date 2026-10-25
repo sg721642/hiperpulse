@@ -7,7 +7,7 @@ Prepared 25 October 2026. This file separates observed software checks from task
 - **Date:** 25 October 2026
 - **Environment:** macOS 15+ (Darwin arm64), Python 3.12.15, pytest 8.3.5, SciPy 1.18.1 (updated per D14).
 - **Command:** `.venv/bin/python -m pytest`
-- **Result:** **94 passed in 7.17s**, 0 failures, 0 errors.
+- **Result:** **101 passed in 9.25s**, 0 failures, 0 errors.
   - 34 baseline unit and API tests (`tests/test_api.py`, `tests/test_pipeline.py`)
   - 7 video regression tests (`tests/test_video_regression.py`)
   - 5 M5 robustness and security boundary tests (`tests/test_m5_robustness.py`)
@@ -152,6 +152,35 @@ Prepared 25 October 2026. This file separates observed software checks from task
   - 17 / 17 Browser Acceptance tests passing in headless Brave via CDP (including live Gemma 4).
   - Negative timeout regression test verified (`TEST_NEGATIVE_TIMEOUT=1`).
 
+## Milestone O: Final Cinematic Polish, Intro Reload Fix & Pre-Deployment Validation
+
+- **Date:** 25 October 2026
+- **Photon Genesis Reload Lifecycle:**
+  - Root cause resolved: `sessionStorage.getItem('hiperpulse_intro_viewed')` was suppressing intro across browser reloads.
+  - Converted to pure in-memory lifecycle: full page refresh and new tabs play the 3.8s sequence naturally. In-page anchor clicks (`#lab`, `#analytics`, etc.) do not replay.
+  - Added dedicated in-place replay affordances (`#replayIntroBtn`, `#footerReplayBtn`) without requiring full page reload.
+  - Capture-safety guard added: replay is strictly prevented (`status('Intro replay unavailable during active recording or signal processing.')`) when `capturing || busy`.
+- **Scientific Method Copy Reconciliation:**
+  - Reconciled `web/index.html` method stages with backend algorithm truth:
+    - STAGE 01: 320x240 bilateral spatial binning (1,102 pixels/patch) with dynamic aspect-ratio alignment.
+    - STAGE 02: 3rd-order Butterworth SOS bandpass filter (0.7-3.0 Hz / 42-180 BPM search band) with zero-phase filtering.
+    - STAGE 03: 10.0 BPM estimator agreement threshold (`estimator_difference_bpm <= 10`).
+    - STAGE 04: 14 heuristic checks matrix and honest null withholding.
+- **Full-Page Visual Enhancements:**
+  - Added optical viewport HUD reticle with concentric rings and crosshair coordinates.
+  - Added Gemma 4 commentary terminal header with terminal icon and model status badge.
+  - Added animated SVG optical flow path (`.method-flow-svg`) connecting all 4 scientific method stages.
+  - Added cinematic observatory footer with 80px HiperPulse emblem cluster, glowing ring, "EVIDENCE BEFORE ESTIMATES." tagline, thread stem, navigation grid, and replay button.
+- **Reusable Scroll Motion Engine & Low-Resource Throttle:**
+  - Implemented Section 19 Reusable Motion Engine (`initScrollMotionEngine()`) using `IntersectionObserver` with progressive enhancement (falls back to visible if JS disabled, respects `prefers-reduced-motion`).
+  - Active recording mode (`body.is-capturing`) pauses hero canvas animation loop and decorative CSS/SVG animations during active 30s capture.
+- **Automated Verification:**
+  - Dedicated intro & walkthrough suite (`scripts/test_intro_experience.js`): **10 / 10 passed** across 5 viewports (`desktop_1920x1080`, `laptop_1366x768`, `tablet_768x1024`, `mobile_390x844`, `mobile_360x740`) with 24 screenshots captured.
+  - Python test suite: **101 / 101 passed in 9.25s**.
+  - Browser acceptance suite: **17 / 17 passed** in headless Brave via CDP (including live Gemma 4 explanation).
+  - Negative timeout regression test: **PASSED** (`TEST_NEGATIVE_TIMEOUT=1`).
+  - JavaScript syntax check: `node --check web/app.js` and `node --check scripts/test_intro_experience.js` -> **0 errors**.
+
 ## Milestone M5: Robustness, Security & Local Docker Readiness Audit
 
 - **Date:** 25 October 2026
@@ -171,8 +200,9 @@ Prepared 25 October 2026. This file separates observed software checks from task
 
 | Check | Expected | Status in this Workspace |
 |---|---|---|
-| Automated unit & API test suite | 94 passed | VERIFIED (94 passed in 7.17s) |
-| JavaScript syntax check | Passes node --check | VERIFIED (app.js and test_browser_acceptance.js) |
+| Automated unit & API test suite | 101 passed | VERIFIED (101 passed in 9.25s) |
+| Dedicated Intro & Walkthrough suite | 10 passed across 5 viewports | VERIFIED (10/10 passed in scripts/test_intro_experience.js) |
+| JavaScript syntax check | Passes node --check | VERIFIED (app.js, test_browser_acceptance.js, test_intro_experience.js) |
 | Sample analyze endpoints | 72 BPM / null withholding | VERIFIED (Clean 72/100%, Artifact null/86%, Flat null/64%) |
 | Artifact comparison lab | Original preserved, copy withheld | VERIFIED (Original 72/100%, Copy null/79%, 3 failed gates) |
 | JSON load and export round trip | Same meaningful receipt/hash after normalization | VERIFIED (Deterministic SHA-256 match, 14 checks preserved) |

@@ -1366,29 +1366,212 @@ details[open] summary::after {
   white-space: pre-wrap;
 }
 
-/* --- 11. SCIENTIFIC METHOD & DISCLAIMERS SECTION --- */
+/* --- 10B. OPTICAL ALIGNMENT RETICLE & HUD --- */
+.optical-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 160px;
+  height: 120px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.reticle-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+
+.reticle-ring.r-outer {
+  width: 140px;
+  height: 90px;
+  border: 1px dashed rgba(62, 232, 159, 0.35);
+  animation: reticleSpin 28s linear infinite;
+}
+
+.reticle-ring.r-inner {
+  width: 70px;
+  height: 45px;
+  border: 1px solid rgba(138, 232, 196, 0.3);
+}
+
+@keyframes reticleSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.reticle-cross {
+  position: absolute;
+  background: rgba(62, 232, 159, 0.35);
+}
+
+.reticle-cross.ch {
+  top: 50%;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.reticle-cross.cv {
+  left: 50%;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.reticle-coord {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--mint-luminous);
+  letter-spacing: 0.8px;
+  opacity: 0.75;
+  background: rgba(3, 9, 7, 0.7);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.reticle-coord.tl-coord {
+  top: -8px;
+  left: -12px;
+}
+
+.reticle-coord.tr-coord {
+  top: -8px;
+  right: -12px;
+}
+
+/* --- 10C. GEMMA 4 COMMENTARY TERMINAL --- */
+.ai-section {
+  background: rgba(10, 27, 22, 0.65);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  margin-top: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-title-group h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-white);
+  letter-spacing: 0.3px;
+}
+
+.ai-terminal-glyph {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(62, 232, 159, 0.4));
+}
+
+.ai-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+/* --- 11. SCIENTIFIC METHOD & FLOW SECTION --- */
 .method-section {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 48px 32px 80px;
+  padding: 64px 32px 88px;
   border-top: 1px solid var(--border-line);
+}
+
+.method-flow-container {
+  width: 100%;
+  margin: 32px 0 16px;
+  overflow: visible;
+}
+
+.method-flow-svg {
+  width: 100%;
+  height: 36px;
+  display: block;
+}
+
+.method-flow-pulse {
+  stroke-dasharray: 80 900;
+  animation: flowPulseAnim 4.5s ease-in-out infinite;
+}
+
+@keyframes flowPulseAnim {
+  0% { stroke-dashoffset: 900; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
 }
 
 .method-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 24px;
-  margin-top: 32px;
+  margin-top: 20px;
 }
 
 .method-step-card {
-  background: rgba(10, 27, 22, 0.5);
+  background: rgba(10, 27, 22, 0.55);
   border: 1px solid var(--border-line);
   border-radius: var(--radius-md);
-  padding: 24px;
+  padding: 26px 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  position: relative;
+  transition: transform 0.35s var(--ease-out-expo), border-color 0.35s, box-shadow 0.35s;
+}
+
+.method-step-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-active);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(62, 232, 159, 0.08);
+}
+
+.method-card-glyph-frame {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: rgba(3, 9, 7, 0.75);
+  border: 1px solid var(--border-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.method-step-card:hover .method-card-glyph-frame {
+  border-color: var(--mint-luminous);
+  box-shadow: 0 0 16px rgba(62, 232, 159, 0.25);
+}
+
+.method-card-svg {
+  width: 32px;
+  height: 32px;
 }
 
 .method-step-num {
@@ -1404,26 +1587,183 @@ details[open] summary::after {
   font-size: 17px;
   font-weight: 700;
   color: var(--text-white);
+  letter-spacing: 0.2px;
 }
 
 .method-step-desc {
   font-size: 13.5px;
   color: var(--text-secondary);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
-/* --- 12. FOOTER --- */
-footer {
+/* --- 12. FULL CINEMATIC OBSERVATORY FOOTER --- */
+.site-footer {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-void) 100%);
+  border-top: 1px solid var(--border-line);
+  position: relative;
+  overflow: hidden;
+}
+
+.footer-container {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 48px 32px 64px;
-  border-top: 1px solid var(--border-line);
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.7;
+  padding: 72px 32px 56px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 48px;
+}
+
+.footer-hero-reveal {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.footer-emblem-cluster {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
+.footer-emblem-svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 16px rgba(62, 232, 159, 0.35));
+}
+
+.footer-thread-stem {
+  position: absolute;
+  bottom: -24px;
+  left: 39px;
+  width: 2px;
+  height: 24px;
+  background: linear-gradient(180deg, rgba(62, 232, 159, 0.5) 0%, rgba(62, 232, 159, 0) 100%);
+}
+
+.footer-tagline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.footer-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2.2px;
+  color: var(--mint-glow);
+  text-transform: uppercase;
+}
+
+.footer-tagline {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #eef2ed 0%, #8ae8c4 50%, #3ee89f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+.footer-subtext {
+  font-size: 14px;
+  color: var(--text-muted);
+  max-width: 580px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
+.footer-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 36px;
+}
+
+.footer-col-title {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--text-white);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.footer-links, .footer-meta-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.footer-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--trans-fast);
+}
+
+.footer-links a:hover {
+  color: var(--mint-luminous);
+}
+
+.footer-meta-list li {
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+}
+
+.footer-meta-list code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mint-glow);
+}
+
+.btn-footer-replay {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mint-soft);
+  background: rgba(16, 37, 29, 0.6);
+  border: 1px solid var(--border-line);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.btn-footer-replay:hover {
+  background: rgba(36, 77, 46, 0.8);
+  border-color: var(--mint-luminous);
+  color: var(--text-white);
+}
+
+.footer-bottom-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.footer-disclaimer strong {
+  color: var(--amber-warning);
+}
+
+.footer-copyright {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 /* --- 13. ACCESSIBILITY & FOCUS STATES --- */
@@ -1560,6 +1900,51 @@ body.is-capturing .hero-canvas {
 
 body.is-capturing .hud-grid {
   opacity: 0.2;
+}
+
+body.is-capturing .method-flow-pulse,
+body.is-capturing .reticle-ring,
+body.is-capturing .thread-pulse,
+body.is-capturing .footer-thread-pulse {
+  animation: none !important;
+}
+
+/* --- 19. REUSABLE MOTION ENGINE (SCROLL CHOREOGRAPHY & PROGRESSIVE ENHANCEMENT) --- */
+/* By default, elements are fully visible so if JS or IntersectionObserver fails, content is never hidden */
+.reveal-on-scroll {
+  opacity: 1;
+  transform: none;
+}
+
+/* When the JS motion engine initializes, it enables smooth scroll transitions */
+html.motion-engine-active .reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.75s var(--ease-out-expo), transform 0.75s var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+
+html.motion-engine-active .reveal-on-scroll.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger utilities for children */
+html.motion-engine-active .stagger-1 { transition-delay: 0.08s; }
+html.motion-engine-active .stagger-2 { transition-delay: 0.16s; }
+html.motion-engine-active .stagger-3 { transition-delay: 0.24s; }
+html.motion-engine-active .stagger-4 { transition-delay: 0.32s; }
+html.motion-engine-active .stagger-5 { transition-delay: 0.40s; }
+
+/* Restrained attention pulse on failed checks */
+@keyframes failPulseAmber {
+  0% { box-shadow: 0 0 0 0 rgba(241, 204, 139, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(241, 204, 139, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(241, 204, 139, 0); }
+}
+
+.check.check-fail.revealing {
+  animation: failPulseAmber 1.2s cubic-bezier(0.2, 0, 0.2, 1) 1;
 }
 
 /* --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) --- */

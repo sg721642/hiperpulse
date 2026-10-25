@@ -2815,6 +2815,353 @@ main().catch(e => {
 ```
 
 
+## `scripts/test_intro_experience.js`
+
+```javascript
+#!/usr/bin/env node
+/**
+ * HiperPulse Dedicated Visual & Functional Intro & Scroll Verification Suite
+ * Tests Photon Genesis entry experience in an unmocked browser context where
+ * navigator.webdriver is unset, verifying:
+ *  - Fresh tab plays intro
+ *  - Reload plays intro (verifying sessionStorage skip fix)
+ *  - Skip button dismisses intro and reveals hero
+ *  - In-place '↺ Intro' replays without full page reload
+ *  - Capture safety: Replay is blocked when recording is active
+ *  - Anchor navigation (#lab, #analytics) does not replay intro
+ *  - Full scroll walkthrough across desktop, tablet, and mobile viewports
+ */
+
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const RESULTS_DIR = path.join(ROOT, 'test-results', 'intro-walkthrough');
+fs.mkdirSync(RESULTS_DIR, { recursive: true });
+
+const TARGET_PORT = 8080;
+const CDP_PORT = 9223;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function findBrowserBinary() {
+  const candidates = [
+    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium'
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error('No Chromium/Brave browser binary found');
+}
+
+class CDPClient {
+  constructor(wsUrl) {
+    this.wsUrl = wsUrl;
+    this.ws = null;
+    this.id = 1;
+    this.callbacks = new Map();
+  }
+
+  async connect() {
+    this.ws = new WebSocket(this.wsUrl);
+    await new Promise((resolve, reject) => {
+      this.ws.onopen = resolve;
+      this.ws.onerror = reject;
+    });
+
+    this.ws.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.id && this.callbacks.has(msg.id)) {
+        const cb = this.callbacks.get(msg.id);
+        this.callbacks.delete(msg.id);
+        if (msg.error) cb.reject(new Error(msg.error.message));
+        else cb.resolve(msg.result);
+      }
+    };
+  }
+
+  send(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = this.id++;
+      this.callbacks.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async eval(expr) {
+    const res = await this.send('Runtime.evaluate', {
+      expression: expr,
+      returnByValue: true,
+      awaitPromise: true
+    });
+    if (res.exceptionDetails) {
+      throw new Error(res.exceptionDetails.text || 'Eval error');
+    }
+    return res.result ? res.result.value : undefined;
+  }
+
+  async captureScreenshot(filename) {
+    const res = await this.send('Page.captureScreenshot', { format: 'png' });
+    const buffer = Buffer.from(res.data, 'base64');
+    const outPath = path.join(RESULTS_DIR, filename);
+    fs.writeFileSync(outPath, buffer);
+    return outPath;
+  }
+
+  close() {
+    if (this.ws) this.ws.close();
+  }
+}
+
+async function runIntroSuite() {
+  console.log('=== HIPERPULSE DEDICATED INTRO & FULL-PAGE SCROLL SUITE ===');
+  const browserBin = findBrowserBinary();
+  console.log(`Using Browser: ${browserBin}`);
+
+  const userDir = `/tmp/intro_test_${Date.now()}`;
+  const browserProc = spawn(browserBin, [
+    '--headless=new',
+    `--remote-debugging-port=${CDP_PORT}`,
+    `--user-data-dir=${userDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-gpu',
+    '--mute-audio',
+    '--window-size=1440,900',
+    'about:blank'
+  ], { stdio: 'ignore' });
+
+  let client = null;
+  const results = [];
+
+  function record(id, name, pass, detail = '') {
+    const status = pass ? 'PASS' : 'FAIL';
+    console.log(`[${status}] ${id}: ${name} ${detail ? `(${detail})` : ''}`);
+    results.push({ id, name, pass, detail });
+  }
+
+  try {
+    // Wait for CDP endpoint
+    let wsUrl = null;
+    for (let i = 0; i < 40; i++) {
+      await sleep(150);
+      try {
+        const json = await new Promise((res, rej) => {
+          http.get(`http://127.0.0.1:${CDP_PORT}/json/version`, resp => {
+            let data = '';
+            resp.on('data', c => (data += c));
+            resp.on('end', () => res(JSON.parse(data)));
+          }).on('error', rej);
+        });
+        wsUrl = json.webSocketDebuggerUrl;
+        if (wsUrl) break;
+      } catch (_) {}
+    }
+    if (!wsUrl) throw new Error('Failed to connect to browser CDP port');
+
+    // Create target page via PUT
+    const newPageRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?http://127.0.0.1:${TARGET_PORT}/`, {
+      method: 'PUT'
+    });
+    const newPage = await newPageRes.json();
+
+    client = new CDPClient(newPage.webSocketDebuggerUrl);
+    await client.connect();
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+
+    // Unset navigator.webdriver on page so the intro is NOT automatically bypassed!
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => false
+        });
+      `
+    });
+
+    // TEST 1: Fresh Page Load Plays Intro
+    console.log('\n--- Test 1: Fresh Page Load Plays Photon Genesis ---');
+    await client.send('Page.navigate', { url: `http://127.0.0.1:${TARGET_PORT}/` });
+    await sleep(400);
+
+    const introVisibleOnLoad = await client.eval(`(() => {
+      const overlay = $('introOverlay');
+      return overlay && overlay.style.display !== 'none' && !overlay.classList.contains('intro-dismissed');
+    })()`);
+    await client.captureScreenshot('01_fresh_tab_intro_active.png');
+    record('INT-01', 'Fresh page load plays Photon Genesis entry', introVisibleOnLoad);
+
+    // TEST 2: Active Particle Rendering at Stage 2/3
+    console.log('\n--- Test 2: Particle & Singularity Evolution ---');
+    await sleep(1200);
+    const canvasIsActive = await client.eval(`(() => {
+      const c = $('introCanvas');
+      return c && c.width > 0 && c.height > 0;
+    })()`);
+    await client.captureScreenshot('02_intro_stage3_signal_formation.png');
+    record('INT-02', 'Photon Genesis particles actively rendering', canvasIsActive);
+
+    // TEST 3: Skip Intro Button Dismissal & Kinetic Headline
+    console.log('\n--- Test 3: Skip Intro Control ---');
+    await client.eval(`$('skipIntroBtn').click()`);
+    await sleep(900);
+
+    const isDismissedAfterSkip = await client.eval(`(() => {
+      const overlay = $('introOverlay');
+      return overlay.style.display === 'none' || overlay.classList.contains('intro-dismissed');
+    })()`);
+
+    const headlineRevealed = await client.eval(`(() => {
+      const words = document.querySelectorAll('.kinetic-word.revealed');
+      return words.length > 0;
+    })()`);
+
+    await client.captureScreenshot('03_hero_revealed_after_skip.png');
+    record('INT-03', 'Skip intro button dismisses overlay and reveals headline', isDismissedAfterSkip && headlineRevealed);
+
+    // TEST 4: Page Reload Replays Intro (Priority 1 Core Fix)
+    console.log('\n--- Test 4: Full Page Reload Replays Intro (Fixing Previous Defect) ---');
+    await client.send('Page.reload');
+    await sleep(400);
+
+    const replayedOnReload = await client.eval(`(() => {
+      const overlay = $('introOverlay');
+      return overlay && overlay.style.display !== 'none' && !overlay.classList.contains('intro-dismissed');
+    })()`);
+    await client.captureScreenshot('04_intro_replayed_on_reload.png');
+    record('INT-04', 'Full-page reload plays Photon Genesis again (sessionStorage fix verified)', replayedOnReload);
+
+    // Wait for auto-dismissal
+    console.log('  Waiting 4.2s for intro auto-completion...');
+    await sleep(4300);
+    const autoDismissed = await client.eval(`(() => {
+      const overlay = $('introOverlay');
+      return overlay.style.display === 'none' || overlay.classList.contains('intro-dismissed');
+    })()`);
+    record('INT-05', 'Photon Genesis auto-dismisses at 3.8s without user interaction', autoDismissed);
+
+    // TEST 5: In-Place Replay ("↺ Intro" Button)
+    console.log('\n--- Test 5: In-Place Replay Without Page Refresh ---');
+    await client.eval(`$('replayIntroBtn').click()`);
+    await sleep(300);
+
+    const replayedInPlace = await client.eval(`(() => {
+      const overlay = $('introOverlay');
+      return overlay && overlay.style.display !== 'none' && !overlay.classList.contains('intro-dismissed');
+    })()`);
+    await client.captureScreenshot('05_in_place_replay_active.png');
+    record('INT-06', 'Replay button restarts animation without page reload', replayedInPlace);
+
+    // Dismiss with ESC key
+    await client.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape' });
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+    await sleep(900);
+    const dismissedByEsc = await client.eval(`$('introOverlay').style.display === 'none'`);
+    record('INT-07', 'ESC key dismisses active intro sequence', dismissedByEsc);
+
+    // TEST 6: Capture Safety (Replay blocked during recording)
+    console.log('\n--- Test 6: Capture Safety Guard ---');
+    await client.eval(`(() => {
+      capturing = true; // simulate active capture
+      $('replayIntroBtn').click();
+    })()`);
+    await sleep(100);
+
+    const statusText = await client.eval(`$('status').textContent`);
+    const overlayStillHidden = await client.eval(`$('introOverlay').style.display === 'none'`);
+    await client.eval(`capturing = false;`); // reset mock
+
+    const safetyBlocked = statusText.includes('unavailable during active recording') && overlayStillHidden;
+    record('INT-08', 'Replay is cleanly blocked during active camera capture', safetyBlocked);
+
+    // TEST 7: In-page anchor navigation does not trigger intro
+    console.log('\n--- Test 7: Anchor Navigation Non-Replay ---');
+    await client.eval(`window.location.hash = '#lab'`);
+    await sleep(200);
+    const anchorNoReplay = await client.eval(`$('introOverlay').style.display === 'none'`);
+    record('INT-09', 'In-page anchor navigation does NOT trigger intro replay', anchorNoReplay);
+
+    // TEST 8: Full Page Walkthrough Across 5 Viewports
+    console.log('\n--- Test 8: Full-Page Walkthrough & Multi-Viewport Captures ---');
+    const viewports = [
+      { name: 'desktop_1920x1080', w: 1920, h: 1080 },
+      { name: 'laptop_1366x768', w: 1366, h: 768 },
+      { name: 'tablet_768x1024', w: 768, h: 1024 },
+      { name: 'mobile_390x844', w: 390, h: 844 },
+      { name: 'mobile_360x740', w: 360, h: 740 }
+    ];
+
+    for (const vp of viewports) {
+      await client.send('Emulation.setDeviceMetricsOverride', {
+        width: vp.w,
+        height: vp.h,
+        deviceScaleFactor: 1,
+        mobile: vp.w <= 768
+      });
+      await sleep(200);
+
+      // Scroll Top (Hero)
+      await client.eval(`window.scrollTo(0, 0)`);
+      await sleep(300);
+      await client.captureScreenshot(`walkthrough_${vp.name}_01_hero.png`);
+
+      // Scroll Middle (Cockpit & Waveform)
+      await client.eval(`$('lab').scrollIntoView({ behavior: 'instant' })`);
+      await sleep(400);
+      await client.captureScreenshot(`walkthrough_${vp.name}_02_cockpit.png`);
+
+      // Scroll Method
+      await client.eval(`$('method').scrollIntoView({ behavior: 'instant' })`);
+      await sleep(400);
+      await client.captureScreenshot(`walkthrough_${vp.name}_03_method.png`);
+
+      // Scroll Bottom (Observatory Footer)
+      await client.eval(`document.querySelector('.site-footer').scrollIntoView({ behavior: 'instant' })`);
+      await sleep(400);
+      await client.captureScreenshot(`walkthrough_${vp.name}_04_footer.png`);
+    }
+
+    record('INT-10', 'Full scroll walkthrough captured across 5 responsive viewports', true);
+
+    // Summary
+    const passed = results.filter(r => r.pass).length;
+    console.log(`\n========================================`);
+    console.log(`  INTRO & SCROLL SUITE: ${passed} / ${results.length} PASSED`);
+    console.log(`  Screenshots saved to: ${RESULTS_DIR}`);
+    console.log(`========================================`);
+
+    fs.writeFileSync(
+      path.join(RESULTS_DIR, 'intro-acceptance-summary.json'),
+      JSON.stringify({ passed, total: results.length, results }, null, 2)
+    );
+
+    if (passed !== results.length) {
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error('\n[SUITE ERROR]', err);
+    process.exit(1);
+  } finally {
+    if (client) client.close();
+    browserProc.kill();
+  }
+}
+
+runIntroSuite();
+```
+
+
 ## `scripts/verify_gemma_live.py`
 
 ```python
@@ -5230,8 +5577,10 @@ function render(r) {
     $('checksSummaryBadge').className = `summary-badge ${r.bpm !== null ? 'accepted' : 'withheld'}`;
   }
   $('checks').replaceChildren();
-  for (const check of r.checks) {
+  r.checks.forEach((check, idx) => {
     const row = document.createElement('div'); row.className = `check ${check.pass ? 'check-pass' : 'check-fail'}`;
+    if (!check.pass) row.classList.add('revealing');
+    row.style.animationDelay = `${idx * 0.03}s`;
     const header = document.createElement('div'); header.className = 'check-header';
     const title = document.createElement('strong'); title.className = check.pass ? 'pass' : 'fail';
     title.textContent = `${check.pass ? 'PASS' : 'FAIL'} · ${check.name.replaceAll('_', ' ')}: ${check.value} (${check.rule})`;
@@ -5312,7 +5661,7 @@ function render(r) {
       }
     }
     $('checks').append(row);
-  }
+  });
   const advice = getRetakeAdvice(r.checks);
   if ($('retakeAdvice')) {
     let text = advice.primary;
@@ -5925,6 +6274,7 @@ function initPhotonGenesisIntro() {
   const canvas = $('introCanvas');
   const skipBtn = $('skipIntroBtn');
   const replayBtn = $('replayIntroBtn');
+  const footerReplayBtn = $('footerReplayBtn');
   const centerMotif = $('introCenterMotif');
   const heroHeadline = $('heroHeadline');
 
@@ -5933,10 +6283,11 @@ function initPhotonGenesisIntro() {
   const ctx = canvas.getContext('2d');
   let animId = null;
   let isDismissed = false;
-  const startTime = performance.now();
+  let startTime = performance.now();
+  let lastFrameTime = performance.now();
+  let fallbackTimer = null;
 
   const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const alreadyViewed = Boolean(sessionStorage.getItem('hiperpulse_intro_viewed') === 'true');
   const isAutomatedTest = Boolean(navigator.webdriver || window.location.search.includes('nointro'));
 
   function triggerKineticTypography() {
@@ -5951,7 +6302,11 @@ function initPhotonGenesisIntro() {
   function dismissIntro(immediate = false) {
     if (isDismissed) return;
     isDismissed = true;
-    sessionStorage.setItem('hiperpulse_intro_viewed', 'true');
+
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
 
     if (animId) {
       cancelAnimationFrame(animId);
@@ -5972,43 +6327,9 @@ function initPhotonGenesisIntro() {
     }, 800);
   }
 
-  // Safety fallback: ensure headline reveals by 3.6s even if transition is delayed
-  setTimeout(triggerKineticTypography, 3600);
-
   window.dismissHiperPulseIntro = dismissIntro;
 
-  if (prefersReduced || alreadyViewed || isAutomatedTest) {
-    dismissIntro(true);
-    if (replayBtn) {
-      replayBtn.addEventListener('click', () => {
-        sessionStorage.removeItem('hiperpulse_intro_viewed');
-        window.location.reload();
-      });
-    }
-    return;
-  }
-
-  if (skipBtn) {
-    skipBtn.addEventListener('click', e => {
-      e.preventDefault();
-      dismissIntro(false);
-    });
-  }
-
-  if (replayBtn) {
-    replayBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('hiperpulse_intro_viewed');
-      window.location.reload();
-    });
-  }
-
-  window.addEventListener('keydown', e => {
-    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
-      e.preventDefault();
-      dismissIntro(false);
-    }
-  });
-
+  // Window dimension tracking
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   let w = 0, h = 0;
 
@@ -6034,65 +6355,68 @@ function initPhotonGenesisIntro() {
   }, { passive: true });
 
   const TOTAL_PARTICLES = 135;
-  const particles = [];
-  const cx = w / 2;
-  const cy = h / 2;
+  let particles = [];
+  let dust = [];
 
-  for (let i = 0; i < TOTAL_PARTICLES; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 180 + Math.random() * 260;
-    const size = Math.random() * 1.8 + 1.1;
+  function buildParticleSystem() {
+    particles = [];
+    dust = [];
+    const cx = w / 2;
+    const cy = h / 2;
 
-    let targetType = 'crest';
-    let tx = cx, ty = cy;
-    if (i < 45) {
-      targetType = 'cheekL';
-      const arcFrac = i / 44;
-      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
-      tx = cx - 110 + Math.cos(arcAngle) * 35;
-      ty = cy + Math.sin(arcAngle) * 75;
-    } else if (i < 90) {
-      targetType = 'cheekR';
-      const arcFrac = (i - 45) / 44;
-      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
-      tx = cx + 110 - Math.cos(arcAngle) * 35;
-      ty = cy + Math.sin(arcAngle) * 75;
-    } else {
-      targetType = 'crest';
-      const waveFrac = (i - 90) / 44;
-      const waveX = (waveFrac - 0.5) * 160;
-      const u = waveFrac * 4 * Math.PI;
-      const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
-                    + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
-      tx = cx + waveX;
-      ty = cy + waveY;
+    for (let i = 0; i < TOTAL_PARTICLES; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 180 + Math.random() * 260;
+      const size = Math.random() * 1.8 + 1.1;
+
+      let targetType = 'crest';
+      let tx = cx, ty = cy;
+      if (i < 45) {
+        targetType = 'cheekL';
+        const arcFrac = i / 44;
+        const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+        tx = cx - 110 + Math.cos(arcAngle) * 35;
+        ty = cy + Math.sin(arcAngle) * 75;
+      } else if (i < 90) {
+        targetType = 'cheekR';
+        const arcFrac = (i - 45) / 44;
+        const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+        tx = cx + 110 - Math.cos(arcAngle) * 35;
+        ty = cy + Math.sin(arcAngle) * 75;
+      } else {
+        targetType = 'crest';
+        const waveFrac = (i - 90) / 44;
+        const waveX = (waveFrac - 0.5) * 160;
+        const u = waveFrac * 4 * Math.PI;
+        const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
+                      + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
+        tx = cx + waveX;
+        ty = cy + waveY;
+      }
+
+      particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        tx,
+        ty,
+        targetType,
+        alpha: 1.0
+      });
     }
 
-    particles.push({
-      x: cx,
-      y: cy,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      size,
-      tx,
-      ty,
-      targetType,
-      alpha: 1.0
-    });
+    for (let d = 0; d < 28; d++) {
+      dust.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 16,
+        vy: (Math.random() - 0.5) * 16,
+        size: Math.random() * 1.2 + 0.4
+      });
+    }
   }
-
-  const dust = [];
-  for (let d = 0; d < 28; d++) {
-    dust.push({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      vx: (Math.random() - 0.5) * 16,
-      vy: (Math.random() - 0.5) * 16,
-      size: Math.random() * 1.2 + 0.4
-    });
-  }
-
-  let lastFrameTime = performance.now();
 
   function renderIntroFrame(now) {
     if (isDismissed) return;
@@ -6250,7 +6574,101 @@ function initPhotonGenesisIntro() {
     animId = requestAnimationFrame(renderIntroFrame);
   }
 
-  animId = requestAnimationFrame(renderIntroFrame);
+  function startIntroSequence() {
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+
+    isDismissed = false;
+    startTime = performance.now();
+    lastFrameTime = performance.now();
+
+    overlay.style.display = 'flex';
+    overlay.classList.remove('intro-dismissed');
+
+    if (centerMotif) {
+      centerMotif.style.opacity = '0';
+      centerMotif.style.transform = 'scale(0.85)';
+    }
+
+    resize();
+    buildParticleSystem();
+
+    fallbackTimer = setTimeout(triggerKineticTypography, 3600);
+    animId = requestAnimationFrame(renderIntroFrame);
+  }
+
+  function handleReplay(e) {
+    if (e) e.preventDefault();
+    if (capturing || busy) {
+      status('Intro replay unavailable during active recording or signal processing.');
+      return;
+    }
+    startIntroSequence();
+  }
+
+  if (skipBtn) {
+    skipBtn.addEventListener('click', e => {
+      e.preventDefault();
+      dismissIntro(false);
+    });
+  }
+
+  if (replayBtn) {
+    replayBtn.addEventListener('click', handleReplay);
+  }
+
+  if (footerReplayBtn) {
+    footerReplayBtn.addEventListener('click', handleReplay);
+  }
+
+  window.addEventListener('keydown', e => {
+    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
+      e.preventDefault();
+      dismissIntro(false);
+    }
+  });
+
+  // Launch policy: On genuine page load (refresh, new tab, direct visit), run full intro.
+  // Bypass only for automated test runners or explicit user reduced-motion requests.
+  if (prefersReduced || isAutomatedTest) {
+    dismissIntro(true);
+  } else {
+    startIntroSequence();
+  }
+}
+
+// --- 19. REUSABLE MOTION ENGINE (SCROLL CHOREOGRAPHY) ---
+function initScrollMotionEngine() {
+  const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (prefersReduced) return;
+  if (!('IntersectionObserver' in window)) return;
+
+  document.documentElement.classList.add('motion-engine-active');
+
+  const targets = document.querySelectorAll(
+    '.panel, .method-step-card, .challenge-card, .ai-section, .plot-group, .site-footer, .hero-centerpiece'
+  );
+
+  const observer = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-revealed');
+        obs.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.12,
+    rootMargin: '0px 0px -30px 0px'
+  });
+
+  targets.forEach((el, idx) => {
+    el.classList.add('reveal-on-scroll');
+    el.style.setProperty('--stagger', String(idx % 4));
+    observer.observe(el);
+  });
 }
 
 // Magnetic Button Interaction
@@ -6273,6 +6691,7 @@ function initApp() {
   initPhotonGenesisIntro();
   initHeroCanvas();
   initMagneticButtons();
+  initScrollMotionEngine();
 }
 
 if (document.readyState === 'loading') {
@@ -6470,6 +6889,14 @@ if (document.readyState === 'loading') {
             <div class="hud-corner tr"></div>
             <div class="hud-corner bl"></div>
             <div class="hud-corner br"></div>
+            <div class="optical-reticle" aria-hidden="true">
+              <div class="reticle-ring r-outer"></div>
+              <div class="reticle-ring r-inner"></div>
+              <div class="reticle-cross ch"></div>
+              <div class="reticle-cross cv"></div>
+              <span class="reticle-coord tl-coord">32%L // OPTIC_01</span>
+              <span class="reticle-coord tr-coord">56%R // OPTIC_02</span>
+            </div>
             <span class="hud-live-tag">OPTICAL FEED</span>
             <div class="readiness-hud" id="readinessHud" style="display:none;">
               <span class="readiness-dot"></span>
@@ -6619,9 +7046,19 @@ if (document.readyState === 'loading') {
           <p id="comparison"></p>
         </div>
 
-        <!-- Gemma 4 Scientific Commentary -->
+        <!-- Gemma 4 Scientific Commentary Terminal -->
         <div class="ai-section" id="evidence">
-          <h3>03 / Explain the session</h3>
+          <div class="ai-header">
+            <div class="ai-title-group">
+              <svg class="ai-terminal-glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="#3ee89f" stroke-width="1.5" stroke-dasharray="3 2"/>
+                <path d="M7 10 L11 12 L7 14" stroke="#8ae8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="13" y1="14" x2="17" y2="14" stroke="#3ee89f" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <h3>03 / Explain the session</h3>
+            </div>
+            <span class="badge ai-badge">GEMMA 4 // 26B-A4B-IT</span>
+          </div>
           <label class="consent">
             <input id="aiConsent" type="checkbox">
             <span>Send the calculated summary to Google's Gemini API for a Gemma 4 explanation.</span>
@@ -6648,34 +7085,140 @@ if (document.readyState === 'loading') {
         <h2 class="section-title">The GREEN Baseline Pipeline</h2>
         <p class="section-desc">How HiperPulse extracts optical signals, tests verification gates, and honestly withholds uncertain estimates.</p>
       </div>
+
+      <!-- Animated Optical Flow Path Connecting Method Stages -->
+      <div class="method-flow-container" aria-hidden="true">
+        <svg class="method-flow-svg" viewBox="0 0 1000 40" fill="none" preserveAspectRatio="none">
+          <path class="method-flow-track" d="M20 20 L980 20" stroke="rgba(111, 146, 138, 0.2)" stroke-width="2" stroke-dasharray="6 6"/>
+          <path class="method-flow-pulse" d="M20 20 L980 20" stroke="#3ee89f" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="125" cy="20" r="5" fill="#030907" stroke="#3ee89f" stroke-width="2"/>
+          <circle cx="375" cy="20" r="5" fill="#030907" stroke="#3ee89f" stroke-width="2"/>
+          <circle cx="625" cy="20" r="5" fill="#030907" stroke="#3ee89f" stroke-width="2"/>
+          <circle cx="875" cy="20" r="5" fill="#030907" stroke="#3ee89f" stroke-width="2"/>
+        </svg>
+      </div>
+
       <div class="method-grid">
-        <div class="method-step-card">
+        <div class="method-step-card reveal-card">
+          <div class="method-card-glyph-frame">
+            <svg class="method-card-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <rect x="8" y="10" width="32" height="28" rx="4" stroke="rgba(111, 146, 138, 0.4)" stroke-width="1.5"/>
+              <rect x="13" y="20" width="8" height="8" rx="1.5" stroke="#3ee89f" stroke-width="1.5" stroke-dasharray="2 2"/>
+              <rect x="27" y="20" width="8" height="8" rx="1.5" stroke="#3ee89f" stroke-width="1.5" stroke-dasharray="2 2"/>
+              <circle cx="17" cy="24" r="1.5" fill="#3ee89f"/>
+              <circle cx="31" cy="24" r="1.5" fill="#3ee89f"/>
+              <line x1="24" y1="14" x2="24" y2="34" stroke="rgba(138, 232, 196, 0.2)" stroke-width="1" stroke-dasharray="2 2"/>
+            </svg>
+          </div>
           <span class="method-step-num">STAGE 01</span>
           <h4 class="method-step-title">Dual Cheek Patches</h4>
-          <p class="method-step-desc">Fixed guide boxes extract spatial green-channel mean intensities from left and right cheek skin, minimizing specular reflection and micro-motion.</p>
+          <p class="method-step-desc">Fixed bilateral guide boxes sample 1,102 pixels per patch on bare cheek skin at 320×240 with dynamic aspect-ratio alignment, minimizing specular reflectance and micro-motion.</p>
         </div>
-        <div class="method-step-card">
+
+        <div class="method-step-card reveal-card">
+          <div class="method-card-glyph-frame">
+            <svg class="method-card-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <path d="M4 24 Q10 24 14 14 T24 34 T34 14 T44 24" stroke="rgba(241, 204, 139, 0.3)" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <path d="M12 24 Q18 12 24 24 T36 24" stroke="#3ee89f" stroke-width="2.5" stroke-linecap="round"/>
+              <line x1="12" y1="8" x2="12" y2="40" stroke="rgba(62, 232, 159, 0.3)" stroke-width="1" stroke-dasharray="2 2"/>
+              <line x1="36" y1="8" x2="36" y2="40" stroke="rgba(62, 232, 159, 0.3)" stroke-width="1" stroke-dasharray="2 2"/>
+            </svg>
+          </div>
           <span class="method-step-num">STAGE 02</span>
           <h4 class="method-step-title">Signal Detrending &amp; Filter</h4>
-          <p class="method-step-desc">A 4th-order Butterworth bandpass filter (0.75–3.0 Hz / 45–180 BPM) attenuates low-frequency baseline drifts and high-frequency sensor noise.</p>
+          <p class="method-step-desc">A 3rd-order Butterworth bandpass filter (0.7–3.0 Hz / 42–180 BPM search band) uses second-order sections (SOS) zero-phase filtering to attenuate baseline wander and high-frequency noise.</p>
         </div>
-        <div class="method-step-card">
+
+        <div class="method-step-card reveal-card">
+          <div class="method-card-glyph-frame">
+            <svg class="method-card-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <path d="M6 38 L14 38 L18 14 L22 38 L28 38 L32 26 L36 38 L42 38" stroke="#8ae8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="18" cy="14" r="3" fill="#3ee89f"/>
+              <line x1="6" y1="40" x2="42" y2="40" stroke="rgba(111, 146, 138, 0.4)" stroke-width="1"/>
+            </svg>
+          </div>
           <span class="method-step-num">STAGE 03</span>
           <h4 class="method-step-title">FFT &amp; Autocorrelation</h4>
-          <p class="method-step-desc">Dual independent peak estimators (spectral density peak + temporal lag autocorrelation) must agree within 8.0 BPM to ensure fundamental periodicity.</p>
+          <p class="method-step-desc">Dual independent peak estimators (SciPy Welch spectral density peak + temporal lag autocorrelation) must agree within 10.0 BPM to confirm genuine cycle repetition.</p>
         </div>
-        <div class="method-step-card">
+
+        <div class="method-step-card reveal-card">
+          <div class="method-card-glyph-frame">
+            <svg class="method-card-svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <polygon points="24,6 40,14 40,28 24,42 8,28 8,14" stroke="#3ee89f" stroke-width="1.75" fill="none"/>
+              <path d="M16 24 L22 30 L32 18" stroke="#8ae8c4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <span class="method-step-num">STAGE 04</span>
           <h4 class="method-step-title">14 Heuristic Quality Gates</h4>
-          <p class="method-step-desc">Every candidate signal is scrutinized across lighting, timing, bilateral agreement, SNR, and stability. Any single failure forces an honest null BPM.</p>
+          <p class="method-step-desc">Every candidate signal is scrutinized across lighting, timing, bilateral agreement, spectral concentration, and stability. Any single failure forces an honest null BPM.</p>
         </div>
       </div>
     </section>
 
-    <!-- Site Footer -->
-    <footer>
-      <div>GREEN baseline · transparent quality checks · Gemma 4 explanations · DigitalOcean-ready</div>
-      <div>Lighting, movement, skin reflectance, exposure and camera processing affect results. A plausible number is not evidence of clinical accuracy.</div>
+    <!-- Full Cinematic Observatory Footer -->
+    <footer class="site-footer">
+      <div class="footer-container">
+        <div class="footer-hero-reveal">
+          <div class="footer-emblem-cluster">
+            <svg class="footer-emblem-svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+              <circle cx="40" cy="40" r="36" stroke="rgba(62, 232, 159, 0.25)" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <circle cx="40" cy="40" r="24" stroke="rgba(138, 232, 196, 0.2)" stroke-width="1"/>
+              <path d="M18 28 C14 35, 14 45, 18 52" stroke="#3ee89f" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M62 28 C66 35, 66 45, 62 52" stroke="#3ee89f" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M26 40 Q33 40 36 30 T40 50 T44 26 T48 46 T54 40" stroke="#8ae8c4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="18" cy="40" r="2.5" fill="#3ee89f"/>
+              <circle cx="62" cy="40" r="2.5" fill="#3ee89f"/>
+            </svg>
+            <div class="footer-thread-stem" aria-hidden="true">
+              <span class="footer-thread-pulse"></span>
+            </div>
+          </div>
+          <div class="footer-tagline-wrap">
+            <p class="footer-eyebrow">HIPERPULSE // REPRODUCIBLE OPTICAL EVIDENCE</p>
+            <h3 class="footer-tagline">EVIDENCE BEFORE ESTIMATES.</h3>
+            <p class="footer-subtext">A transparent camera-based signal laboratory emphasizing heuristic quality verification over plausible guessing.</p>
+          </div>
+        </div>
+
+        <div class="footer-nav-grid">
+          <div class="footer-nav-col">
+            <span class="footer-col-title">Navigation</span>
+            <ul class="footer-links">
+              <li><a href="#hero">Observatory Top</a></li>
+              <li><a href="#lab">Signal Lab Cockpit</a></li>
+              <li><a href="#analytics">Waveform Analytics</a></li>
+              <li><a href="#challenges">Artifact Lab</a></li>
+              <li><a href="#method">The GREEN Pipeline</a></li>
+            </ul>
+          </div>
+          <div class="footer-nav-col">
+            <span class="footer-col-title">Architecture</span>
+            <ul class="footer-meta-list">
+              <li><span>Engine:</span> <code>green-evidence-1.1</code></li>
+              <li><span>Stack:</span> Python 3.12 / FastAPI / SciPy</li>
+              <li><span>Explain:</span> Gemma 4 (26B-A4B-IT)</li>
+              <li><span>Privacy:</span> Client-side frame processing</li>
+            </ul>
+          </div>
+          <div class="footer-nav-col">
+            <span class="footer-col-title">Project Source</span>
+            <ul class="footer-links">
+              <li><a href="https://github.com/sg721642/hiperpulse" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+              <li><button id="footerReplayBtn" class="btn-footer-replay">↺ Replay Photon Genesis</button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer-bottom-bar">
+          <p class="footer-disclaimer">
+            <strong>Experimental wellness prototype. Not a medical device.</strong> No clinical accuracy, diagnosis, blood pressure, or oxygen saturation. Lighting, skin reflectance, exposure stability, and facial micro-motion directly affect results. Heuristic gate passage demonstrates signal quality, not clinical accuracy.
+          </p>
+          <div class="footer-copyright">
+            <span>HiperPulse Signal Observatory &copy; 2026. Released under the MIT License.</span>
+          </div>
+        </div>
+      </div>
     </footer>
   </main>
 
@@ -8055,29 +8598,212 @@ details[open] summary::after {
   white-space: pre-wrap;
 }
 
-/* --- 11. SCIENTIFIC METHOD & DISCLAIMERS SECTION --- */
+/* --- 10B. OPTICAL ALIGNMENT RETICLE & HUD --- */
+.optical-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 160px;
+  height: 120px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.reticle-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+
+.reticle-ring.r-outer {
+  width: 140px;
+  height: 90px;
+  border: 1px dashed rgba(62, 232, 159, 0.35);
+  animation: reticleSpin 28s linear infinite;
+}
+
+.reticle-ring.r-inner {
+  width: 70px;
+  height: 45px;
+  border: 1px solid rgba(138, 232, 196, 0.3);
+}
+
+@keyframes reticleSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.reticle-cross {
+  position: absolute;
+  background: rgba(62, 232, 159, 0.35);
+}
+
+.reticle-cross.ch {
+  top: 50%;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.reticle-cross.cv {
+  left: 50%;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.reticle-coord {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--mint-luminous);
+  letter-spacing: 0.8px;
+  opacity: 0.75;
+  background: rgba(3, 9, 7, 0.7);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.reticle-coord.tl-coord {
+  top: -8px;
+  left: -12px;
+}
+
+.reticle-coord.tr-coord {
+  top: -8px;
+  right: -12px;
+}
+
+/* --- 10C. GEMMA 4 COMMENTARY TERMINAL --- */
+.ai-section {
+  background: rgba(10, 27, 22, 0.65);
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  margin-top: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-title-group h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-white);
+  letter-spacing: 0.3px;
+}
+
+.ai-terminal-glyph {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(62, 232, 159, 0.4));
+}
+
+.ai-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+/* --- 11. SCIENTIFIC METHOD & FLOW SECTION --- */
 .method-section {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 48px 32px 80px;
+  padding: 64px 32px 88px;
   border-top: 1px solid var(--border-line);
+}
+
+.method-flow-container {
+  width: 100%;
+  margin: 32px 0 16px;
+  overflow: visible;
+}
+
+.method-flow-svg {
+  width: 100%;
+  height: 36px;
+  display: block;
+}
+
+.method-flow-pulse {
+  stroke-dasharray: 80 900;
+  animation: flowPulseAnim 4.5s ease-in-out infinite;
+}
+
+@keyframes flowPulseAnim {
+  0% { stroke-dashoffset: 900; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
 }
 
 .method-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 24px;
-  margin-top: 32px;
+  margin-top: 20px;
 }
 
 .method-step-card {
-  background: rgba(10, 27, 22, 0.5);
+  background: rgba(10, 27, 22, 0.55);
   border: 1px solid var(--border-line);
   border-radius: var(--radius-md);
-  padding: 24px;
+  padding: 26px 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  position: relative;
+  transition: transform 0.35s var(--ease-out-expo), border-color 0.35s, box-shadow 0.35s;
+}
+
+.method-step-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-active);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(62, 232, 159, 0.08);
+}
+
+.method-card-glyph-frame {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: rgba(3, 9, 7, 0.75);
+  border: 1px solid var(--border-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.method-step-card:hover .method-card-glyph-frame {
+  border-color: var(--mint-luminous);
+  box-shadow: 0 0 16px rgba(62, 232, 159, 0.25);
+}
+
+.method-card-svg {
+  width: 32px;
+  height: 32px;
 }
 
 .method-step-num {
@@ -8093,26 +8819,183 @@ details[open] summary::after {
   font-size: 17px;
   font-weight: 700;
   color: var(--text-white);
+  letter-spacing: 0.2px;
 }
 
 .method-step-desc {
   font-size: 13.5px;
   color: var(--text-secondary);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
-/* --- 12. FOOTER --- */
-footer {
+/* --- 12. FULL CINEMATIC OBSERVATORY FOOTER --- */
+.site-footer {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-void) 100%);
+  border-top: 1px solid var(--border-line);
+  position: relative;
+  overflow: hidden;
+}
+
+.footer-container {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 48px 32px 64px;
-  border-top: 1px solid var(--border-line);
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.7;
+  padding: 72px 32px 56px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 48px;
+}
+
+.footer-hero-reveal {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.footer-emblem-cluster {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
+.footer-emblem-svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 16px rgba(62, 232, 159, 0.35));
+}
+
+.footer-thread-stem {
+  position: absolute;
+  bottom: -24px;
+  left: 39px;
+  width: 2px;
+  height: 24px;
+  background: linear-gradient(180deg, rgba(62, 232, 159, 0.5) 0%, rgba(62, 232, 159, 0) 100%);
+}
+
+.footer-tagline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.footer-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2.2px;
+  color: var(--mint-glow);
+  text-transform: uppercase;
+}
+
+.footer-tagline {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #eef2ed 0%, #8ae8c4 50%, #3ee89f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+.footer-subtext {
+  font-size: 14px;
+  color: var(--text-muted);
+  max-width: 580px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
+.footer-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 36px;
+}
+
+.footer-col-title {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--text-white);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.footer-links, .footer-meta-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.footer-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--trans-fast);
+}
+
+.footer-links a:hover {
+  color: var(--mint-luminous);
+}
+
+.footer-meta-list li {
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+}
+
+.footer-meta-list code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mint-glow);
+}
+
+.btn-footer-replay {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mint-soft);
+  background: rgba(16, 37, 29, 0.6);
+  border: 1px solid var(--border-line);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.btn-footer-replay:hover {
+  background: rgba(36, 77, 46, 0.8);
+  border-color: var(--mint-luminous);
+  color: var(--text-white);
+}
+
+.footer-bottom-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.footer-disclaimer strong {
+  color: var(--amber-warning);
+}
+
+.footer-copyright {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 /* --- 13. ACCESSIBILITY & FOCUS STATES --- */
@@ -8249,6 +9132,51 @@ body.is-capturing .hero-canvas {
 
 body.is-capturing .hud-grid {
   opacity: 0.2;
+}
+
+body.is-capturing .method-flow-pulse,
+body.is-capturing .reticle-ring,
+body.is-capturing .thread-pulse,
+body.is-capturing .footer-thread-pulse {
+  animation: none !important;
+}
+
+/* --- 19. REUSABLE MOTION ENGINE (SCROLL CHOREOGRAPHY & PROGRESSIVE ENHANCEMENT) --- */
+/* By default, elements are fully visible so if JS or IntersectionObserver fails, content is never hidden */
+.reveal-on-scroll {
+  opacity: 1;
+  transform: none;
+}
+
+/* When the JS motion engine initializes, it enables smooth scroll transitions */
+html.motion-engine-active .reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.75s var(--ease-out-expo), transform 0.75s var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+
+html.motion-engine-active .reveal-on-scroll.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger utilities for children */
+html.motion-engine-active .stagger-1 { transition-delay: 0.08s; }
+html.motion-engine-active .stagger-2 { transition-delay: 0.16s; }
+html.motion-engine-active .stagger-3 { transition-delay: 0.24s; }
+html.motion-engine-active .stagger-4 { transition-delay: 0.32s; }
+html.motion-engine-active .stagger-5 { transition-delay: 0.40s; }
+
+/* Restrained attention pulse on failed checks */
+@keyframes failPulseAmber {
+  0% { box-shadow: 0 0 0 0 rgba(241, 204, 139, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(241, 204, 139, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(241, 204, 139, 0); }
+}
+
+.check.check-fail.revealing {
+  animation: failPulseAmber 1.2s cubic-bezier(0.2, 0, 0.2, 1) 1;
 }
 
 /* --- 18. SIGNATURE INTRO: PHOTON GENESIS (ACTIVE THEORY-INSPIRED) --- */

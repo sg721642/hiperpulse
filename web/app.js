@@ -350,8 +350,10 @@ function render(r) {
     $('checksSummaryBadge').className = `summary-badge ${r.bpm !== null ? 'accepted' : 'withheld'}`;
   }
   $('checks').replaceChildren();
-  for (const check of r.checks) {
+  r.checks.forEach((check, idx) => {
     const row = document.createElement('div'); row.className = `check ${check.pass ? 'check-pass' : 'check-fail'}`;
+    if (!check.pass) row.classList.add('revealing');
+    row.style.animationDelay = `${idx * 0.03}s`;
     const header = document.createElement('div'); header.className = 'check-header';
     const title = document.createElement('strong'); title.className = check.pass ? 'pass' : 'fail';
     title.textContent = `${check.pass ? 'PASS' : 'FAIL'} · ${check.name.replaceAll('_', ' ')}: ${check.value} (${check.rule})`;
@@ -432,7 +434,7 @@ function render(r) {
       }
     }
     $('checks').append(row);
-  }
+  });
   const advice = getRetakeAdvice(r.checks);
   if ($('retakeAdvice')) {
     let text = advice.primary;
@@ -1045,6 +1047,7 @@ function initPhotonGenesisIntro() {
   const canvas = $('introCanvas');
   const skipBtn = $('skipIntroBtn');
   const replayBtn = $('replayIntroBtn');
+  const footerReplayBtn = $('footerReplayBtn');
   const centerMotif = $('introCenterMotif');
   const heroHeadline = $('heroHeadline');
 
@@ -1053,10 +1056,11 @@ function initPhotonGenesisIntro() {
   const ctx = canvas.getContext('2d');
   let animId = null;
   let isDismissed = false;
-  const startTime = performance.now();
+  let startTime = performance.now();
+  let lastFrameTime = performance.now();
+  let fallbackTimer = null;
 
   const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const alreadyViewed = Boolean(sessionStorage.getItem('hiperpulse_intro_viewed') === 'true');
   const isAutomatedTest = Boolean(navigator.webdriver || window.location.search.includes('nointro'));
 
   function triggerKineticTypography() {
@@ -1071,7 +1075,11 @@ function initPhotonGenesisIntro() {
   function dismissIntro(immediate = false) {
     if (isDismissed) return;
     isDismissed = true;
-    sessionStorage.setItem('hiperpulse_intro_viewed', 'true');
+
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
 
     if (animId) {
       cancelAnimationFrame(animId);
@@ -1092,43 +1100,9 @@ function initPhotonGenesisIntro() {
     }, 800);
   }
 
-  // Safety fallback: ensure headline reveals by 3.6s even if transition is delayed
-  setTimeout(triggerKineticTypography, 3600);
-
   window.dismissHiperPulseIntro = dismissIntro;
 
-  if (prefersReduced || alreadyViewed || isAutomatedTest) {
-    dismissIntro(true);
-    if (replayBtn) {
-      replayBtn.addEventListener('click', () => {
-        sessionStorage.removeItem('hiperpulse_intro_viewed');
-        window.location.reload();
-      });
-    }
-    return;
-  }
-
-  if (skipBtn) {
-    skipBtn.addEventListener('click', e => {
-      e.preventDefault();
-      dismissIntro(false);
-    });
-  }
-
-  if (replayBtn) {
-    replayBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('hiperpulse_intro_viewed');
-      window.location.reload();
-    });
-  }
-
-  window.addEventListener('keydown', e => {
-    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
-      e.preventDefault();
-      dismissIntro(false);
-    }
-  });
-
+  // Window dimension tracking
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   let w = 0, h = 0;
 
@@ -1154,65 +1128,68 @@ function initPhotonGenesisIntro() {
   }, { passive: true });
 
   const TOTAL_PARTICLES = 135;
-  const particles = [];
-  const cx = w / 2;
-  const cy = h / 2;
+  let particles = [];
+  let dust = [];
 
-  for (let i = 0; i < TOTAL_PARTICLES; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 180 + Math.random() * 260;
-    const size = Math.random() * 1.8 + 1.1;
+  function buildParticleSystem() {
+    particles = [];
+    dust = [];
+    const cx = w / 2;
+    const cy = h / 2;
 
-    let targetType = 'crest';
-    let tx = cx, ty = cy;
-    if (i < 45) {
-      targetType = 'cheekL';
-      const arcFrac = i / 44;
-      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
-      tx = cx - 110 + Math.cos(arcAngle) * 35;
-      ty = cy + Math.sin(arcAngle) * 75;
-    } else if (i < 90) {
-      targetType = 'cheekR';
-      const arcFrac = (i - 45) / 44;
-      const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
-      tx = cx + 110 - Math.cos(arcAngle) * 35;
-      ty = cy + Math.sin(arcAngle) * 75;
-    } else {
-      targetType = 'crest';
-      const waveFrac = (i - 90) / 44;
-      const waveX = (waveFrac - 0.5) * 160;
-      const u = waveFrac * 4 * Math.PI;
-      const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
-                    + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
-      tx = cx + waveX;
-      ty = cy + waveY;
+    for (let i = 0; i < TOTAL_PARTICLES; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 180 + Math.random() * 260;
+      const size = Math.random() * 1.8 + 1.1;
+
+      let targetType = 'crest';
+      let tx = cx, ty = cy;
+      if (i < 45) {
+        targetType = 'cheekL';
+        const arcFrac = i / 44;
+        const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+        tx = cx - 110 + Math.cos(arcAngle) * 35;
+        ty = cy + Math.sin(arcAngle) * 75;
+      } else if (i < 90) {
+        targetType = 'cheekR';
+        const arcFrac = (i - 45) / 44;
+        const arcAngle = (arcFrac - 0.5) * Math.PI * 0.72;
+        tx = cx + 110 - Math.cos(arcAngle) * 35;
+        ty = cy + Math.sin(arcAngle) * 75;
+      } else {
+        targetType = 'crest';
+        const waveFrac = (i - 90) / 44;
+        const waveX = (waveFrac - 0.5) * 160;
+        const u = waveFrac * 4 * Math.PI;
+        const waveY = -Math.sin(u) * 22 * Math.exp(-Math.pow(waveFrac - 0.35, 2) * 8)
+                      + Math.sin(u * 2) * 8 * Math.exp(-Math.pow(waveFrac - 0.65, 2) * 12);
+        tx = cx + waveX;
+        ty = cy + waveY;
+      }
+
+      particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        tx,
+        ty,
+        targetType,
+        alpha: 1.0
+      });
     }
 
-    particles.push({
-      x: cx,
-      y: cy,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      size,
-      tx,
-      ty,
-      targetType,
-      alpha: 1.0
-    });
+    for (let d = 0; d < 28; d++) {
+      dust.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 16,
+        vy: (Math.random() - 0.5) * 16,
+        size: Math.random() * 1.2 + 0.4
+      });
+    }
   }
-
-  const dust = [];
-  for (let d = 0; d < 28; d++) {
-    dust.push({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      vx: (Math.random() - 0.5) * 16,
-      vy: (Math.random() - 0.5) * 16,
-      size: Math.random() * 1.2 + 0.4
-    });
-  }
-
-  let lastFrameTime = performance.now();
 
   function renderIntroFrame(now) {
     if (isDismissed) return;
@@ -1370,7 +1347,101 @@ function initPhotonGenesisIntro() {
     animId = requestAnimationFrame(renderIntroFrame);
   }
 
-  animId = requestAnimationFrame(renderIntroFrame);
+  function startIntroSequence() {
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+
+    isDismissed = false;
+    startTime = performance.now();
+    lastFrameTime = performance.now();
+
+    overlay.style.display = 'flex';
+    overlay.classList.remove('intro-dismissed');
+
+    if (centerMotif) {
+      centerMotif.style.opacity = '0';
+      centerMotif.style.transform = 'scale(0.85)';
+    }
+
+    resize();
+    buildParticleSystem();
+
+    fallbackTimer = setTimeout(triggerKineticTypography, 3600);
+    animId = requestAnimationFrame(renderIntroFrame);
+  }
+
+  function handleReplay(e) {
+    if (e) e.preventDefault();
+    if (capturing || busy) {
+      status('Intro replay unavailable during active recording or signal processing.');
+      return;
+    }
+    startIntroSequence();
+  }
+
+  if (skipBtn) {
+    skipBtn.addEventListener('click', e => {
+      e.preventDefault();
+      dismissIntro(false);
+    });
+  }
+
+  if (replayBtn) {
+    replayBtn.addEventListener('click', handleReplay);
+  }
+
+  if (footerReplayBtn) {
+    footerReplayBtn.addEventListener('click', handleReplay);
+  }
+
+  window.addEventListener('keydown', e => {
+    if (!isDismissed && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Space')) {
+      e.preventDefault();
+      dismissIntro(false);
+    }
+  });
+
+  // Launch policy: On genuine page load (refresh, new tab, direct visit), run full intro.
+  // Bypass only for automated test runners or explicit user reduced-motion requests.
+  if (prefersReduced || isAutomatedTest) {
+    dismissIntro(true);
+  } else {
+    startIntroSequence();
+  }
+}
+
+// --- 19. REUSABLE MOTION ENGINE (SCROLL CHOREOGRAPHY) ---
+function initScrollMotionEngine() {
+  const prefersReduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (prefersReduced) return;
+  if (!('IntersectionObserver' in window)) return;
+
+  document.documentElement.classList.add('motion-engine-active');
+
+  const targets = document.querySelectorAll(
+    '.panel, .method-step-card, .challenge-card, .ai-section, .plot-group, .site-footer, .hero-centerpiece'
+  );
+
+  const observer = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-revealed');
+        obs.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.12,
+    rootMargin: '0px 0px -30px 0px'
+  });
+
+  targets.forEach((el, idx) => {
+    el.classList.add('reveal-on-scroll');
+    el.style.setProperty('--stagger', String(idx % 4));
+    observer.observe(el);
+  });
 }
 
 // Magnetic Button Interaction
@@ -1393,6 +1464,7 @@ function initApp() {
   initPhotonGenesisIntro();
   initHeroCanvas();
   initMagneticButtons();
+  initScrollMotionEngine();
 }
 
 if (document.readyState === 'loading') {

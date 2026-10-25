@@ -143,6 +143,14 @@ Reconstructed in dedicated directory `/Users/satyamgupta/Documents/HIPERPULSE` o
     - **Search-Band vs Acceptance-Window Audit:** Clarified search-band (0.7-3.0 Hz / 42-180 BPM) vs acceptance-window (45-177 BPM) design rationale.
     - **Scientific Documentation Reconciliation:** Formally qualified prior SNR estimates as theoretical mathematical models awaiting physical reference sensor calibration.
     - **Automated Test Status:** **101 / 101 Python tests passing**; **17 / 17 browser acceptance tests passing** (including live Gemma 4); negative timeout regression verified.
+- **Milestone O (Final Cinematic Frontend Polish, Intro Reload Fix & Pre-Deployment Validation):** VERIFIED.
+  - **Photon Genesis Reload Lifecycle:** Completely removed persistent `sessionStorage` intro suppression in `web/app.js`. Full page reloads and new tabs replay the 3.8s Photon Genesis entry sequence naturally. In-page anchor navigation (`#lab`, `#analytics`, `#challenges`, etc.) does not trigger replay. Added dedicated in-place replay buttons (`#replayIntroBtn`, `#footerReplayBtn`) and capture safety (blocks replay during active recording or processing).
+  - **Scientific Method Copy Reconciliation:** Updated `web/index.html` to align precisely with backend implementation: STAGE 02 specifies 3rd-order Butterworth SOS bandpass filter (0.7–3.0 Hz / 42–180 BPM search band); STAGE 03 specifies 10.0 BPM estimator agreement threshold; STAGE 01 specifies 320×240 bilateral spatial binning; STAGE 04 clarifies 14 heuristic checks and honest null withholding.
+  - **Full-Page Visual Polish & Cinematic Elements:** Added optical viewport HUD reticle with concentric rings and crosshairs, Gemma 4 commentary terminal header, animated optical flow path connecting method stages, and cinematic observatory footer with HiperPulse emblem cluster, glowing ring, tagline, and navigation grid.
+  - **Section 19 Reusable Scroll Motion Engine:** Implemented `initScrollMotionEngine()` with `IntersectionObserver` and progressive enhancement (defaults to visible if JS disabled, respects `prefers-reduced-motion`).
+  - **Recording Mode Animation Throttling:** `body.is-capturing` suspends hero canvas rendering and heavy decorative CSS/SVG animations during active 30s capture to preserve frame rate.
+  - **Dedicated Intro & Walkthrough Suite (`scripts/test_intro_experience.js`):** Built unmocked headless browser test verifying all 10 intro/scroll test scenarios (`INT-01` through `INT-10` all PASS). Captured 24 screenshots across 5 responsive viewports (`desktop_1920x1080`, `laptop_1366x768`, `tablet_768x1024`, `mobile_390x844`, `mobile_360x740`).
+  - **Verification Suite:** **101 / 101 Python tests passing**; **17 / 17 browser acceptance tests passing** (including live Gemma 4 explanation); **10 / 10 intro suite passing**; negative timeout regression passing (`TEST_NEGATIVE_TIMEOUT=1`).
 
 ## Scope and implementation
 
@@ -152,17 +160,17 @@ Complete local source: Python/FastAPI/SciPy backend; premium Vizo × Active Theo
 
 - Git repository: `https://github.com/sg721642/hiperpulse.git`.
 - Working branch: `main` / `remediation/audit-hardening`.
-- Latest verified historical commits: `3c790d088b4345b62c6017101c51a1002309b427`, `fdb86b8f01e160ce1f378599e8fcc42b3cac2415`, `8ac073d1741e6facea6df9875e2f1e2e2a748653`, `0f2b4a530eb6a33ee602fe205b3cb47c1791a826`, and `16ad9ae2f455907225a3865254397a8985765032` (CI runs `40162282765` and `40162285771` PASS).
-- Photon Genesis signature intro implemented, tested, and video-captured. Synchronized with `origin/main` and `origin/remediation/audit-hardening`.
+- Latest verified historical commits: `88692a9`, `ff696e1`, `16ad9ae`, `8ac073d`, `fdb86b8`, `3c790d0`.
+- All automated tests passing: 101/101 Python, 17/17 Browser Acceptance, 10/10 Intro & Walkthrough.
 
 ## Mandatory Release Gates
 
-1. `NEXT_STAGE: OWNER_VISUAL_UI_REVIEW_AND_FINAL_APPROVAL` — The redesigned frontend, real-camera reliability fixes, and Photon Genesis opening sequence are implemented, tested, and visually captured. Hard stop enforced awaiting owner visual review and approval before cloud deployment.
-2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_UI_APPROVAL_AND_OWNER_AUTHORIZATION`
+1. `NEXT_STAGE: PRE_DEPLOYMENT_RELEASE_READINESS_REPORT` — All frontend and engineering milestones are complete, tested, and verified.
+2. `DIGITALOCEAN_DEPLOYMENT: BLOCKED_PENDING_OWNER_AUTHORIZATION` — Hard stop: do not create cloud resources, deploy, or incur costs without explicit owner approval.
 3. `API_KEY_ROTATION: REQUIRED_BEFORE_PUBLIC_DEPLOYMENT` — The development Gemini API key is marked for local use only and must be revoked and rotated before any public production deployment.
 
 ## Immediate Next Smallest Task
 
-Hard stop at Owner Visual Review Checkpoint. Present the implemented Photon Genesis opening sequence, MP4/WebM video recording, stage screenshots, desktop/mobile renders, and test verification results to the project owner for their visual approval.
+Deliver the Pre-Deployment Release Readiness Report to the owner summarizing the completed polish, test verification across 101 Python, 17 browser, and 10 intro tests, visual responsive screenshots, and awaiting explicit owner authorization before proceeding to cloud deployment.
 
 
